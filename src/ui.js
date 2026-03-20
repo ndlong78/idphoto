@@ -1,0 +1,325 @@
+import { applyZoom, centerFace, cleanupCropEvents, computeFrame, fitImage, initCrop } from './crop.js';
+import { renderResult, renderToPreview } from './render.js';
+import { FMTS, resetState, state } from './state.js';
+
+let toastTimer = null;
+let uiController = null;
+
+export function getControls() {
+  return {
+    bright: document.getElementById('bright'),
+    contrast: document.getElementById('contrast'),
+    sharp: document.getElementById('sharp'),
+    skin: document.getElementById('skin'),
+    feather: document.getElementById('feather'),
+  };
+}
+
+export function initUI(actions) {
+  uiController?.abort();
+  uiController = new AbortController();
+  const { signal } = uiController;
+
+  const uploadZone = document.getElementById('upload-zone');
+  const fileInput = document.getElementById('file-input');
+
+  uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('drag'); }, { signal });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'), { signal });
+  uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) actions.onFileDrop(file);
+  }, { signal });
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) actions.onFileInput(file);
+  }, { signal });
+
+  bindClick('btn-pick', actions.onPickFile, signal);
+  bindAsyncClick('btn-reprocess', actions.onReprocessAI, signal);
+  bindClick('btn-reset-face', () => { centerFace(); void renderToPreview(); }, signal);
+  bindClick('btn-fit', () => fitImage(true), signal);
+  bindClick('btn-zoom-minus', () => applyZoom(0.85, state.cW / 2, state.cH / 2), signal);
+  bindClick('btn-zoom-plus', () => applyZoom(1.15, state.cW / 2, state.cH / 2), signal);
+
+  bindClick('btn-result-minus', () => zoomResult(-1), signal);
+  bindClick('btn-result-plus', () => zoomResult(1), signal);
+  bindClick('btn-result-fit', () => zoomResultFit(), signal);
+
+  bindClick('btn-open-lightbox', () => openLightbox(), signal);
+  bindClick('btn-lb-close', () => closeLightbox(), signal);
+  bindClick('btn-lb-minus', () => lightboxZoom(-1), signal);
+  bindClick('btn-lb-plus', () => lightboxZoom(1), signal);
+  bindClick('btn-lb-fit', () => lightboxZoomFit(), signal);
+
+  bindAsyncClick('btn-jpg-600', () => actions.onDownload('jpeg600'), signal);
+  bindAsyncClick('btn-png-600', () => actions.onDownload('png600'), signal);
+  bindAsyncClick('btn-jpg-300', () => actions.onDownload('jpeg300'), signal);
+  bindAsyncClick('btn-copy', actions.onCopy, signal);
+
+  bindClick('btn-reset-app', () => {
+    cleanupCropEvents();
+    resetState();
+    document.getElementById('file-input').value = '';
+    setSection('upload');
+  }, signal);
+
+  document.querySelectorAll('.fbtn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.fbtn').forEach((x) => x.classList.remove('active'));
+      btn.classList.add('active');
+      state.curFmt = btn.dataset.fmt;
+      computeFrame();
+      void renderToPreview();
+      document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
+    }, { signal });
+  });
+
+  document.querySelectorAll('.sw').forEach((sw) => {
+    sw.addEventListener('click', () => {
+      document.querySelectorAll('.sw').forEach((x) => x.classList.remove('active'));
+      sw.classList.add('active');
+      const [r, g, b] = (sw.dataset.c ?? '255,255,255').split(',').map(Number);
+      state.bgColor = { r, g, b };
+      void renderToPreview();
+    }, { signal });
+  });
+
+  [['bright', 'bv'], ['contrast', 'cv'], ['sharp', 'sv'], ['skin', 'skv'], ['feather', 'fv']].forEach(([id, lblId]) => {
+    const input = document.getElementById(id);
+    input.addEventListener('input', () => {
+      const lbl = document.getElementById(lblId);
+      lbl.textContent = input.value;
+      void renderToPreview();
+    }, { signal });
+  });
+
+  document.getElementById('zoom-range').addEventListener('input', (e) => {
+    const value = e.target.valueAsNumber / 100;
+    applyZoom(value / state.crop.scale, state.cW / 2, state.cH / 2);
+  }, { signal });
+
+  document.getElementById('result-lightbox').addEventListener('click', closeLightbox, { signal });
+  document.querySelector('.lightbox-inner').addEventListener('click', (e) => e.stopPropagation(), { signal });
+
+  setSection('upload');
+}
+
+function bindClick(id, fn, signal) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('click', fn, { signal });
+}
+
+function bindAsyncClick(id, fn, signal) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', async () => {
+    el.disabled = true;
+    try {
+      await fn();
+    } finally {
+      el.disabled = false;
+    }
+  }, { signal });
+}
+
+export function setSection(section) {
+  state.section = section;
+  ['upload', 'loading', 'editor'].forEach((s) => {
+    document.getElementById(`${s}-section`).style.display = 'none';
+  });
+
+  if (section === 'upload') {
+    document.getElementById('upload-section').style.display = 'flex';
+    setSteps(1);
+  } else if (section === 'loading') {
+    document.getElementById('loading-section').style.display = 'flex';
+    setSteps(2);
+  } else {
+    document.getElementById('editor-section').style.display = 'block';
+  }
+}
+
+export function setSteps(active) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`s${i}`);
+    el.className = 'step';
+    if (i < active) el.classList.add('done');
+    else if (i === active) el.classList.add('active');
+  }
+}
+
+export function setLoad(title, sub) {
+  document.getElementById('load-title').textContent = title;
+  document.getElementById('load-sub').textContent = sub;
+}
+
+export function setProgress(percent) {
+  document.getElementById('pfill').style.width = `${percent}%`;
+}
+
+export function setLoadStep(step, status) {
+  const el = document.getElementById(`ls${step}`);
+  el.className = `ls ${status}`;
+}
+
+export function setFaceStatus(score) {
+  const bar = document.getElementById('face-bar');
+  const txt = document.getElementById('face-txt');
+  if (score !== null) {
+    bar.className = 'fstatus ok';
+    txt.textContent = `Nhận dạng khuôn mặt (${Math.round(score * 100)}%)`;
+  } else {
+    bar.className = 'fstatus warn';
+    txt.textContent = 'Không tìm thấy khuôn mặt — căn giữa tự động';
+  }
+}
+
+export function setAiInfoBar(success) {
+  const bar = document.getElementById('ai-info-bar');
+  bar.replaceChildren();
+
+  if (success) {
+    const tag = document.createElement('div');
+    tag.className = 'ai-tag';
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    const txt = document.createElement('span');
+    txt.textContent = 'AI ISNet — Tách nền chính xác';
+    tag.append(dot, txt);
+
+    const hint = document.createElement('span');
+    hint.style.fontSize = '10px';
+    hint.style.color = '#4a5568';
+    hint.textContent = '🔄 Bạn có thể bấm AI để xử lý lại';
+    bar.append(tag, hint);
+  } else {
+    const warn = document.createElement('span');
+    warn.style.fontSize = '11px';
+    warn.style.color = '#fbbf24';
+    warn.textContent = '⚠️ Chưa tải được AI — dùng Flood Fill. Có thể thử lại AI.';
+    bar.appendChild(warn);
+  }
+}
+
+export function toast(message, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = message;
+  el.className = `show ${type}`;
+  if (toastTimer) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    el.className = '';
+  }, 3500);
+}
+
+export function syncZoomUI() {
+  const percent = Math.round(state.crop.scale * 100);
+  document.getElementById('zoom-lbl').textContent = `${percent}%`;
+  document.getElementById('zoom-range').value = `${Math.max(5, Math.min(600, percent))}`;
+}
+
+function zoomResult(dir) {
+  const next = Math.max(0.25, Math.min(8, state.rv.scale * (dir > 0 ? 1.4 : 0.71)));
+  const sf = next / state.rv.scale;
+  state.rv.tx *= sf;
+  state.rv.ty *= sf;
+  state.rv.scale = next;
+  applyResultTransform();
+}
+
+function zoomResultFit() {
+  state.rv.scale = 1;
+  state.rv.tx = 0;
+  state.rv.ty = 0;
+  applyResultTransform();
+}
+
+function applyResultTransform() {
+  const canvas = document.getElementById('result-canvas');
+  canvas.style.transform = `translate(${state.rv.tx}px, ${state.rv.ty}px) scale(${state.rv.scale})`;
+  document.getElementById('zoom-out-lbl').textContent = state.rv.scale === 1 ? '1×' : `${Math.round(state.rv.scale * 100)}%`;
+}
+
+function openLightbox() {
+  const src = document.getElementById('result-canvas');
+  if (!src.width) {
+    toast('Chưa có ảnh để xem', 'err');
+    return;
+  }
+
+  const dst = document.getElementById('lightbox-canvas');
+  dst.width = src.width;
+  dst.height = src.height;
+  dst.getContext('2d')?.drawImage(src, 0, 0);
+
+  const maxW = window.innerWidth * 0.88;
+  const maxH = window.innerHeight * 0.78;
+  state.lb.scale = Math.min(1, maxW / src.width, maxH / src.height);
+  state.lb.tx = 0;
+  state.lb.ty = 0;
+  applyLightboxTransform();
+
+  document.getElementById('result-lightbox').classList.add('open');
+}
+
+function closeLightbox() {
+  document.getElementById('result-lightbox').classList.remove('open');
+}
+
+function lightboxZoom(dir) {
+  state.lb.scale = Math.max(0.1, Math.min(12, state.lb.scale * (dir > 0 ? 1.4 : 0.71)));
+  applyLightboxTransform();
+}
+
+function lightboxZoomFit() {
+  const c = document.getElementById('lightbox-canvas');
+  const maxW = window.innerWidth * 0.88;
+  const maxH = window.innerHeight * 0.78;
+  state.lb.scale = Math.min(1, maxW / c.width, maxH / c.height);
+  state.lb.tx = 0;
+  state.lb.ty = 0;
+  applyLightboxTransform();
+}
+
+function applyLightboxTransform() {
+  const c = document.getElementById('lightbox-canvas');
+  c.style.width = `${Math.round(c.width * state.lb.scale)}px`;
+  c.style.height = `${Math.round(c.height * state.lb.scale)}px`;
+  c.style.transform = `translate(${state.lb.tx}px, ${state.lb.ty}px)`;
+  document.getElementById('lb-lbl').textContent = `${Math.round(state.lb.scale * 100)}%`;
+}
+
+export async function download(mode) {
+  const hiRes = mode === 'jpeg300' ? await renderResult(1) : await renderResult(2);
+  const fmt = FMTS[state.curFmt];
+  const ext = mode.includes('png') ? 'png' : 'jpeg';
+  const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+  const scale = mode === 'jpeg300' ? 1 : 2;
+  const link = document.createElement('a');
+  link.download = `photovisa_${state.curFmt}_${fmt.w * scale}x${fmt.h * scale}_${scale === 2 ? 600 : 300}dpi.${ext}`;
+  link.href = hiRes.toDataURL(mime, 1);
+  link.click();
+}
+
+export async function copyToClipboard() {
+  const canvas = document.getElementById('result-canvas');
+  await new Promise((resolve, reject) => {
+    canvas.toBlob(async (blob) => {
+      if (!blob) return reject(new Error('Không thể tạo blob'));
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    }, 'image/png');
+  });
+}
+
+export function mountEditor() {
+  setSection('editor');
+  initCrop();
+  void renderToPreview();
+}
