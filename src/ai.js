@@ -68,8 +68,15 @@ async function configureOnnxRuntime() {
 }
 
 export async function warmupAi() {
-  // Không chặn AI khi thiếu cross-origin isolation:
-  // nhiều môi trường deploy tĩnh không có COOP/COEP vẫn chạy được bản CPU.
+  // @imgly/background-removal dùng onnxruntime-web và sẽ cố bật đa luồng WASM.
+  // Nếu thiếu crossOriginIsolated, ORT sẽ log cảnh báo numThreads và có thể chạy không ổn định.
+  // Chủ động tắt AI trong môi trường này để tránh lỗi/console noise sau khi upload.
+  if (!globalThis.crossOriginIsolated) {
+    state.aiReady = false;
+    return false;
+  }
+
+  // Chỉ warmup ORT khi đã có COOP/COEP đầy đủ.
   await configureOnnxRuntime();
 
   const urls = [
