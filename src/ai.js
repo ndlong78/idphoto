@@ -68,11 +68,8 @@ async function configureOnnxRuntime() {
 }
 
 export async function warmupAi() {
-  if (!globalThis.crossOriginIsolated) {
-    state.aiReady = false;
-    return false;
-  }
-
+  // Không chặn AI khi thiếu cross-origin isolation:
+  // nhiều môi trường deploy tĩnh không có COOP/COEP vẫn chạy được bản CPU.
   await configureOnnxRuntime();
 
   const urls = [
