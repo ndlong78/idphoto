@@ -43,7 +43,8 @@ export function initUI(actions) {
     actions.onPickFile();
   }, { signal });
 
-  bindClick('btn-pick', actions.onPickFile, signal);
+  // #btn-pick đang là <label for="file-input"> nên browser tự mở file picker.
+  // Không bind thêm click() để tránh mở picker 2 lần và gây cảm giác phải upload 2 lần.
   bindAsyncClick('btn-reprocess', actions.onReprocessAI, signal);
   bindClick('btn-reset-face', () => { centerFace(); void renderToPreview(); }, signal);
   bindClick('btn-fit', () => fitImage(true), signal);
