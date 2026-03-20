@@ -7,10 +7,8 @@ let faceModelLoadPromise = null;
 let faceModelsReady = false;
 
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
-const FACE_API_MODULE_SOURCES = [
-  'https://esm.sh/face-api.js@0.22.2',
-];
 const FACE_API_SCRIPT_SOURCES = [
+  'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js',
   'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
   'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js',
 ];
@@ -104,22 +102,8 @@ export async function loadFaceModels() {
 
   faceModelLoadPromise = (async () => {
     if (!faceApi) {
-      for (const url of FACE_API_MODULE_SOURCES) {
-        try {
-          const mod = await import(url);
-          const candidate = mod?.default ?? mod;
-          if (candidate?.nets?.tinyFaceDetector && candidate?.nets?.faceLandmark68TinyNet) {
-            faceApi = candidate;
-            break;
-          }
-        } catch {
-          // thử nguồn ESM tiếp theo
-        }
-      }
-
-      if (!faceApi) {
-        faceApi = await loadScriptSequentially(FACE_API_SCRIPT_SOURCES);
-      }
+      // Chỉ dùng UMD để tránh nạp trùng backend TFJS từ ESM/CDN khác nhau.
+      faceApi = await loadScriptSequentially(FACE_API_SCRIPT_SOURCES);
 
       if (!faceApi) {
         return false;
