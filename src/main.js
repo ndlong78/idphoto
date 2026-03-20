@@ -26,10 +26,10 @@ function loadImageFromFile(file) {
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => resolve(img);
-      img.onerror = reject;
+      img.onerror = () => reject(new Error('Không đọc được ảnh từ thiết bị. Hãy thử đổi ảnh sang JPG hoặc PNG.'));
       img.src = String(e.target?.result ?? '');
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('Không thể đọc file ảnh.'));
     reader.readAsDataURL(file);
   });
 }
@@ -88,9 +88,15 @@ async function handleFile(file) {
     return;
   }
 
-  state.origFile = file;
-  state.origImg = await loadImageFromFile(file);
-  await processFile(file);
+  try {
+    state.origFile = file;
+    state.origImg = await loadImageFromFile(file);
+    await processFile(file);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Upload thất bại. Vui lòng thử lại.';
+    toast(msg, 'err');
+    setSection('upload');
+  }
 }
 
 async function reprocessAI() {
@@ -104,8 +110,17 @@ async function reprocessAI() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const openFilePicker = () => {
+    const input = document.getElementById('file-input');
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+      return;
+    }
+    input.click();
+  };
+
   initUI({
-    onPickFile: () => document.getElementById('file-input').click(),
+    onPickFile: openFilePicker,
     onReprocessAI: reprocessAI,
     onDownload: async (mode) => {
       await download(mode);

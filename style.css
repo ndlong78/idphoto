@@ -87,9 +87,16 @@ main { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; paddin
 .btn-pick {
   background: linear-gradient(135deg, var(--gold), var(--gold-l)); color: var(--bg);
   padding: 9px 24px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .2s;
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .btn-pick:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(212,175,80,.3); }
-#file-input { display: none; }
+#file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
 .tips { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; max-width: 480px; margin-top: 18px; width: 100%; }
 .tip { background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 11px; text-align: center; }
 .tip-icon { font-size: 19px; margin-bottom: 5px; }

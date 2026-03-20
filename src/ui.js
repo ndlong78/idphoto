@@ -37,6 +37,12 @@ export function initUI(actions) {
     if (file) actions.onFileInput(file);
   }, { signal });
 
+  uploadZone.addEventListener('click', (e) => {
+    const target = e.target;
+    if (target instanceof HTMLElement && target.closest('#btn-pick')) return;
+    actions.onPickFile();
+  }, { signal });
+
   bindClick('btn-pick', actions.onPickFile, signal);
   bindAsyncClick('btn-reprocess', actions.onReprocessAI, signal);
   bindClick('btn-reset-face', () => { centerFace(); void renderToPreview(); }, signal);
