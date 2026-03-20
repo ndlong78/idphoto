@@ -36,7 +36,9 @@ export function resetState() {
 }
 
 export function validateImageFile(file) {
-  if (!file.type.startsWith('image/')) return { ok: false, error: 'Vui lòng chọn file ảnh!' };
+  const hasImageMime = file.type.startsWith('image/');
+  const hasImageExt = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+  if (!hasImageMime && !hasImageExt) return { ok: false, error: 'Vui lòng chọn file ảnh (JPG/PNG/WEBP/HEIC)!' };
   if (file.size > 15 * 1024 * 1024) return { ok: false, error: 'File quá lớn (tối đa 15MB)' };
   return { ok: true };
 }
