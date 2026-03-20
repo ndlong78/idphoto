@@ -26,7 +26,22 @@ async function resolveFaceModelBase() {
   return FACE_MODEL_FALLBACK;
 }
 
+async function configureOnnxRuntime() {
+  try {
+    const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/esm/ort.min.js');
+    if (ort?.env?.wasm) {
+      ort.env.wasm.numThreads = 1;
+      ort.env.wasm.proxy = false;
+    }
+  } catch {
+    // Không chặn luồng xử lý nếu không cấu hình được ORT
+  }
+}
+
+
 export async function warmupAi() {
+  await configureOnnxRuntime();
+
   const urls = [
     'https://esm.sh/@imgly/background-removal@1.5.5',
     'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
