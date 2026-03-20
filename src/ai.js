@@ -2,10 +2,47 @@ import { state } from './state.js';
 
 let removeBackgroundFn = null;
 let faceApi = null;
+let faceApiScriptPromise = null;
 
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+const FACE_API_MODULE_SOURCES = [
+  'https://esm.sh/face-api.js@0.22.2',
+];
+const FACE_API_SCRIPT_SOURCES = [
+  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
+  'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js',
+];
+
+function loadScriptSequentially(urls) {
+  if (faceApiScriptPromise) return faceApiScriptPromise;
+
+  faceApiScriptPromise = (async () => {
+    for (const url of urls) {
+      try {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.async = true;
+          script.crossOrigin = 'anonymous';
+          script.src = url;
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error(`Không tải được script: ${url}`));
+          document.head.appendChild(script);
+        });
+
+        if (globalThis.faceapi) return globalThis.faceapi;
+      } catch {
+        // thử nguồn script tiếp theo
+      }
+    }
+    return null;
+  })();
+
+  return faceApiScriptPromise;
+}
 
 async function configureOnnxRuntime() {
+  if (!globalThis.crossOriginIsolated) return false;
+
   const ortSources = [
     'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js',
     'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/esm/ort.min.js',
@@ -18,14 +55,24 @@ async function configureOnnxRuntime() {
         ort.env.wasm.numThreads = 1;
         ort.env.wasm.proxy = false;
       }
-      return;
+      if (globalThis.ort?.env?.wasm) {
+        globalThis.ort.env.wasm.numThreads = 1;
+        globalThis.ort.env.wasm.proxy = false;
+      }
+      return true;
     } catch {
       // thử nguồn ORT kế tiếp
     }
   }
+  return false;
 }
 
 export async function warmupAi() {
+  if (!globalThis.crossOriginIsolated) {
+    state.aiReady = false;
+    return false;
+  }
+
   await configureOnnxRuntime();
 
   const urls = [
@@ -51,11 +98,24 @@ export async function warmupAi() {
 
 export async function loadFaceModels() {
   if (!faceApi) {
-    try {
-      const mod = await import('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.esm.js');
-      faceApi = mod;
-    } catch {
-      faceApi = null;
+    for (const url of FACE_API_MODULE_SOURCES) {
+      try {
+        const mod = await import(url);
+        const candidate = mod?.default ?? mod;
+        if (candidate?.nets?.tinyFaceDetector && candidate?.nets?.faceLandmark68TinyNet) {
+          faceApi = candidate;
+          break;
+        }
+      } catch {
+        // thử nguồn ESM tiếp theo
+      }
+    }
+
+    if (!faceApi) {
+      faceApi = await loadScriptSequentially(FACE_API_SCRIPT_SOURCES);
+    }
+
+    if (!faceApi) {
       return false;
     }
   }
