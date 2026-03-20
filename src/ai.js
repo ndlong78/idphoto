@@ -3,6 +3,28 @@ import { state } from './state.js';
 let removeBackgroundFn = null;
 let faceApi = null;
 const FACE_MODEL_LOCAL = '/assets/face-models';
+const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+
+async function hasFaceManifest(baseUrl, manifestName) {
+  try {
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const res = await fetch(`${normalizedBase}/${manifestName}`, { method: 'HEAD', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveFaceModelBase() {
+  const tinyManifest = 'tiny_face_detector_model-weights_manifest.json';
+  const landmarkManifest = 'face_landmark_68_tiny_model-weights_manifest.json';
+
+  const localTinyOk = await hasFaceManifest(FACE_MODEL_LOCAL, tinyManifest);
+  const localLandmarkOk = await hasFaceManifest(FACE_MODEL_LOCAL, landmarkManifest);
+  if (localTinyOk && localLandmarkOk) return FACE_MODEL_LOCAL;
+
+  return FACE_MODEL_FALLBACK;
+}
 
 export async function warmupAi() {
   const urls = [
@@ -29,7 +51,7 @@ export async function warmupAi() {
 export async function loadFaceModels() {
   if (!faceApi) {
     try {
-      const mod = await import('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.esm.js');
+      const mod = await import('https://esm.sh/face-api.js@0.22.2?bundle');
       faceApi = mod;
     } catch {
       faceApi = null;
@@ -38,22 +60,14 @@ export async function loadFaceModels() {
   }
 
   try {
+    const modelBase = await resolveFaceModelBase();
     await Promise.all([
-      faceApi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_LOCAL),
-      faceApi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_LOCAL),
+      faceApi.nets.tinyFaceDetector.loadFromUri(modelBase),
+      faceApi.nets.faceLandmark68TinyNet.loadFromUri(modelBase),
     ]);
     return true;
   } catch {
-    const fallback = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
-    try {
-      await Promise.all([
-        faceApi.nets.tinyFaceDetector.loadFromUri(fallback),
-        faceApi.nets.faceLandmark68TinyNet.loadFromUri(fallback),
-      ]);
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 
