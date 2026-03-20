@@ -390,3 +390,16 @@ footer {
   text-align: center; padding: 20px; color: var(--muted); font-size: 11px;
   border-top: 1px solid var(--border); position: relative; z-index: 1;
 }
+
+/* Accessibility improvements */
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.sw {
+  appearance: none;
+  border: 1px solid rgba(255,255,255,.1);
+  cursor: pointer;
+}
