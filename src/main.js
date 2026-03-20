@@ -19,6 +19,7 @@ import {
 } from './ui.js';
 
 let pipelineStep = 'idle';
+let isProcessing = false;
 
 function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
@@ -96,6 +97,11 @@ async function processFile(file) {
 }
 
 async function handleFile(file) {
+  if (isProcessing) {
+    toast('Đang xử lý ảnh trước đó, vui lòng đợi...', 'err');
+    return;
+  }
+
   const validation = validateImageFile(file);
   if (!validation.ok) {
     toast(validation.error, 'err');
@@ -103,6 +109,7 @@ async function handleFile(file) {
   }
 
   try {
+    isProcessing = true;
     state.origFile = file;
     state.origImg = await loadImageFromFile(file);
     await processFile(file);
@@ -110,6 +117,8 @@ async function handleFile(file) {
     const msg = err instanceof Error ? err.message : 'Upload thất bại. Vui lòng thử lại.';
     toast(msg, 'err');
     setSection('upload');
+  } finally {
+    isProcessing = false;
   }
 }
 

@@ -3,6 +3,8 @@ import { state } from './state.js';
 let removeBackgroundFn = null;
 let faceApi = null;
 let faceApiScriptPromise = null;
+let faceModelLoadPromise = null;
+let faceModelsReady = false;
 
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
 const FACE_API_MODULE_SOURCES = [
@@ -97,42 +99,56 @@ export async function warmupAi() {
 }
 
 export async function loadFaceModels() {
-  if (!faceApi) {
-    for (const url of FACE_API_MODULE_SOURCES) {
-      try {
-        const mod = await import(url);
-        const candidate = mod?.default ?? mod;
-        if (candidate?.nets?.tinyFaceDetector && candidate?.nets?.faceLandmark68TinyNet) {
-          faceApi = candidate;
-          break;
+  if (faceModelsReady) return true;
+  if (faceModelLoadPromise) return faceModelLoadPromise;
+
+  faceModelLoadPromise = (async () => {
+    if (!faceApi) {
+      for (const url of FACE_API_MODULE_SOURCES) {
+        try {
+          const mod = await import(url);
+          const candidate = mod?.default ?? mod;
+          if (candidate?.nets?.tinyFaceDetector && candidate?.nets?.faceLandmark68TinyNet) {
+            faceApi = candidate;
+            break;
+          }
+        } catch {
+          // thử nguồn ESM tiếp theo
         }
-      } catch {
-        // thử nguồn ESM tiếp theo
+      }
+
+      if (!faceApi) {
+        faceApi = await loadScriptSequentially(FACE_API_SCRIPT_SOURCES);
+      }
+
+      if (!faceApi) {
+        return false;
       }
     }
 
-    if (!faceApi) {
-      faceApi = await loadScriptSequentially(FACE_API_SCRIPT_SOURCES);
-    }
-
-    if (!faceApi) {
+    try {
+      await Promise.all([
+        faceApi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_FALLBACK),
+        faceApi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_FALLBACK),
+      ]);
+      faceModelsReady = true;
+      return true;
+    } catch {
+      faceModelsReady = false;
       return false;
     }
-  }
+  })();
 
   try {
-    await Promise.all([
-      faceApi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_FALLBACK),
-      faceApi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_FALLBACK),
-    ]);
-    return true;
-  } catch {
-    return false;
+    return await faceModelLoadPromise;
+  } finally {
+    if (!faceModelsReady) faceModelLoadPromise = null;
   }
 }
 
 export async function detectFace(canvas) {
-  if (!faceApi) return null;
+  const ready = faceModelsReady ? true : await loadFaceModels();
+  if (!ready || !faceApi) return null;
   try {
     const det = await faceApi
       .detectSingleFace(canvas, new faceApi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.28 }))
