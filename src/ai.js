@@ -2,42 +2,28 @@ import { state } from './state.js';
 
 let removeBackgroundFn = null;
 let faceApi = null;
-const FACE_MODEL_LOCAL = '/assets/face-models';
+
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
 
-async function hasFaceManifest(baseUrl, manifestName) {
-  try {
-    const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    const res = await fetch(`${normalizedBase}/${manifestName}`, { method: 'HEAD', cache: 'no-store' });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-async function resolveFaceModelBase() {
-  const tinyManifest = 'tiny_face_detector_model-weights_manifest.json';
-  const landmarkManifest = 'face_landmark_68_tiny_model-weights_manifest.json';
-
-  const localTinyOk = await hasFaceManifest(FACE_MODEL_LOCAL, tinyManifest);
-  const localLandmarkOk = await hasFaceManifest(FACE_MODEL_LOCAL, landmarkManifest);
-  if (localTinyOk && localLandmarkOk) return FACE_MODEL_LOCAL;
-
-  return FACE_MODEL_FALLBACK;
-}
-
 async function configureOnnxRuntime() {
-  try {
-    const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/esm/ort.min.js');
-    if (ort?.env?.wasm) {
-      ort.env.wasm.numThreads = 1;
-      ort.env.wasm.proxy = false;
+  const ortSources = [
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js',
+    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/esm/ort.min.js',
+  ];
+
+  for (const url of ortSources) {
+    try {
+      const ort = await import(url);
+      if (ort?.env?.wasm) {
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.proxy = false;
+      }
+      return;
+    } catch {
+      // thử nguồn ORT kế tiếp
     }
-  } catch {
-    // Không chặn luồng xử lý nếu không cấu hình được ORT
   }
 }
-
 
 export async function warmupAi() {
   await configureOnnxRuntime();
@@ -66,7 +52,7 @@ export async function warmupAi() {
 export async function loadFaceModels() {
   if (!faceApi) {
     try {
-      const mod = await import('https://esm.sh/face-api.js@0.22.2?bundle');
+      const mod = await import('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.esm.js');
       faceApi = mod;
     } catch {
       faceApi = null;
@@ -75,10 +61,9 @@ export async function loadFaceModels() {
   }
 
   try {
-    const modelBase = await resolveFaceModelBase();
     await Promise.all([
-      faceApi.nets.tinyFaceDetector.loadFromUri(modelBase),
-      faceApi.nets.faceLandmark68TinyNet.loadFromUri(modelBase),
+      faceApi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_FALLBACK),
+      faceApi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_FALLBACK),
     ]);
     return true;
   } catch {
