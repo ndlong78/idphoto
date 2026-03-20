@@ -127,7 +127,21 @@ async function reprocessAI() {
     toast('Chưa có ảnh', 'err');
     return;
   }
+
+  if (!state.aiReady) {
+    setLoad('Đang tải AI...', 'Đang thử lại mô-đun tách nền');
+    const aiReady = await warmupAi();
+    if (!aiReady) {
+      toast('⚠️ Chưa tải được AI. Vui lòng kiểm tra mạng và thử lại.', 'err');
+      setAiInfoBar(false);
+      return;
+    }
+  }
+
   state.aiMaskImg = await runBackgroundRemoval(state.origFile);
+  if (!state.aiMaskImg) {
+    toast('⚠️ AI chưa xử lý được ảnh này. Đang giữ chế độ Flood Fill.', 'err');
+  }
   setAiInfoBar(Boolean(state.aiMaskImg));
   await renderToPreview();
 }
