@@ -41,8 +41,8 @@ function loadScriptSequentially(urls) {
 }
 
 async function configureOnnxRuntime() {
-  if (!globalThis.crossOriginIsolated) return false;
-
+  // Không phụ thuộc crossOriginIsolated: chỉ cần ép numThreads=1
+  // là tránh cảnh báo ORT tự set 8 threads trong môi trường non-isolated.
   const ortSources = [
     'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js',
     'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/esm/ort.min.js',
@@ -55,6 +55,9 @@ async function configureOnnxRuntime() {
         ort.env.wasm.numThreads = 1;
         ort.env.wasm.proxy = false;
       }
+
+      // Một số bundle chỉ đọc từ globalThis.ort nên đồng bộ cả 2 nơi.
+      if (ort?.env) globalThis.ort = ort;
       if (globalThis.ort?.env?.wasm) {
         globalThis.ort.env.wasm.numThreads = 1;
         globalThis.ort.env.wasm.proxy = false;
