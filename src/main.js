@@ -126,10 +126,9 @@ async function reprocessAI() {
 document.addEventListener('DOMContentLoaded', () => {
   const openFilePicker = () => {
     const input = document.getElementById('file-input');
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-      return;
-    }
+    if (!(input instanceof HTMLInputElement)) return;
+
+    // showPicker yêu cầu user gesture rất chặt; click() ổn định hơn giữa các trình duyệt
     input.click();
   };
 
