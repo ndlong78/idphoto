@@ -51,6 +51,7 @@ async function loadAI() {
       var fn = mod.removeBackground || mod.default?.removeBackground || mod.default;
       if (typeof fn === 'function') {
         removeBackground = fn;
+        _patchOrtEnv(mod);   // set numThreads=1 before any ONNX session is created
         aiReady = true;
         console.log('AI loaded from:', u);
         return true;
@@ -173,6 +174,7 @@ async function process() {
       var aiCfg = buildAiCfg(function (key, cur, tot) {
         if (tot > 0) setP(35 + Math.round((cur / tot) * 50));
       });
+      _patchOrtEnv({});   // best-effort patch window.ort / globalThis.ort
       var blob = await removeBackground(origFile, aiCfg);
       aiMaskImg = await blobToImg(blob);
       setLS(3, 'done'); setP(88);
@@ -210,6 +212,7 @@ async function reprocessAI() {
   if (!aiReady || !removeBackground)  { toast('Thư viện AI chưa sẵn sàng', 'err'); return; }
   document.getElementById('renote').textContent = '🔄 AI đang xử lý lại...';
   try {
+    _patchOrtEnv({});   // best-effort patch window.ort / globalThis.ort
     var blob = await removeBackground(origFile, buildAiCfg(null));
     aiMaskImg = await blobToImg(blob);
     needDraw = true;
@@ -223,9 +226,55 @@ async function reprocessAI() {
   }
 }
 
+// ── Patch ort.env.wasm.numThreads = 1 ──────────────────────────────────────
+// GitHub Pages không hỗ trợ COOP/COEP header → SharedArrayBuffer không khả
+// dụng → multi-threaded WASM bị chặn → onnxruntime-web log warning "numThreads
+// is set to N but crossOriginIsolated is false".
+//
+// Fix: set numThreads = 1 ở tầng env (global) TRƯỚC khi session ONNX được tạo.
+// Thử nhiều cách vì ort có thể được bundle khác nhau tuỳ CDN:
+//   (a) mod.ort        — module re-export ort trực tiếp
+//   (b) mod.default.ort — default export bọc ort
+//   (c) window.ort / globalThis.ort — side-effect của một số bundler
+//   (d) navigator.hardwareConcurrency mock — fallback cuối cùng
+// ──────────────────────────────────────────────────────────────────────────
+function _patchOrtEnv(mod) {
+  var patched = false;
+
+  function tryPatch(o) {
+    if (!o || patched) return;
+    try {
+      if (o.env && o.env.wasm) {
+        o.env.wasm.numThreads = 1;
+        o.env.wasm.simd = true;   // SIMD vẫn hoạt động, không cần SAB
+        patched = true;
+      }
+    } catch(e) {}
+  }
+
+  try { tryPatch(mod.ort); }              catch(e) {}
+  try { tryPatch(mod.default && mod.default.ort); } catch(e) {}
+  try { tryPatch(window.ort); }           catch(e) {}
+  try { tryPatch(globalThis.ort); }       catch(e) {}
+
+  // Fallback: mock hardwareConcurrency = 1 tạm thời trong lần gọi này.
+  // ort đọc navigator.hardwareConcurrency để tính số threads nếu env chưa set.
+  if (!patched) {
+    try {
+      var realCores = navigator.hardwareConcurrency;
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: function(){ return 1; }, configurable: true });
+      // Restore sau 5 giây (sau khi ONNX session đã khởi tạo xong)
+      setTimeout(function() {
+        try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: function(){ return realCores; }, configurable: true }); } catch(e) {}
+      }, 5000);
+    } catch(e) {}
+  }
+}
+
 // publicPath → staticimgly.com (chứa .onnx model files)
-// numThreads:1 → tắt SharedArrayBuffer (cần COOP/COEP không có ở file://)
-// proxyToWorker:false → tránh tạo Worker từ blob: URL bị chặn ở file://
+// proxyToWorker:false → tránh tạo Worker từ blob: URL bị chặn ở GitHub Pages
+// KHÔNG dùng onnxRuntime key — không phải config hợp lệ của imgly@1.5.5,
+// threading được kiểm soát qua _patchOrtEnv() ở trên.
 function buildAiCfg(progressCb) {
   var VERSION = '1.5.5';
   var cfg = {
@@ -234,7 +283,6 @@ function buildAiCfg(progressCb) {
     device: 'cpu',
     debug: false,
     proxyToWorker: false,
-    onnxRuntime: { numThreads: 1 },
     output: { format: 'image/png', quality: 1 },
   };
   if (progressCb) cfg.progress = progressCb;
@@ -1165,7 +1213,7 @@ async function dlPhoto(fmt) {
     toast('✅ Đã tải ' + (f.w * scale) + '×' + (f.h * scale) + 'px 600 DPI!', 'ok');
     setSteps(4);
   } finally {
-    if (dlBtn) { dlBtn.textContent = '⬇️ JPG 600 DPI'; dlBtn.disabled = false; }
+    if (dlBtn) { dlBtn.textContent = '⬇️ Tải xuống JPG (600 DPI)'; dlBtn.disabled = false; }
     document.getElementById('renote').textContent = '';
   }
 }
@@ -1226,10 +1274,10 @@ function setAiInfoBar(success) {
   var bar = document.getElementById('ai-info-bar');
   if (success) {
     bar.innerHTML = '<div class="ai-tag"><div class="dot"></div>AI ISNet — Tách nền chính xác</div>' +
-      '<span style="font-size:10px;color:#4a5568;">🔄 <a onclick="reprocessAI()" style="cursor:pointer;color:#d4af50;text-decoration:none;">Xử lý lại</a></span>';
+      '<span style="font-size:10px;color:#4a5568;">🔄 <a href="javascript:reprocessAI()" style="color:#d4af50;text-decoration:none;">Xử lý lại</a></span>';
   } else {
     bar.innerHTML = '<span style="font-size:11px;color:#fbbf24;">⚠️ Chưa tải được AI — dùng Flood Fill. ' +
-      '<a onclick="reprocessAI()" style="cursor:pointer;color:#d4af50;text-decoration:none;">Thử lại AI</a></span>';
+      '<a href="javascript:reprocessAI()" style="color:#d4af50;text-decoration:none;">Thử lại AI</a></span>';
   }
 }
 
