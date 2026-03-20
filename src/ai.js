@@ -7,7 +7,6 @@ let faceApiScriptPromise = null;
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
 const FACE_API_MODULE_SOURCES = [
   'https://esm.sh/face-api.js@0.22.2',
-  'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/+esm',
 ];
 const FACE_API_SCRIPT_SOURCES = [
   'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js',
@@ -42,6 +41,8 @@ function loadScriptSequentially(urls) {
 }
 
 async function configureOnnxRuntime() {
+  if (!globalThis.crossOriginIsolated) return false;
+
   const ortSources = [
     'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js',
     'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/esm/ort.min.js',
@@ -58,14 +59,20 @@ async function configureOnnxRuntime() {
         globalThis.ort.env.wasm.numThreads = 1;
         globalThis.ort.env.wasm.proxy = false;
       }
-      return;
+      return true;
     } catch {
       // thử nguồn ORT kế tiếp
     }
   }
+  return false;
 }
 
 export async function warmupAi() {
+  if (!globalThis.crossOriginIsolated) {
+    state.aiReady = false;
+    return false;
+  }
+
   await configureOnnxRuntime();
 
   const urls = [
