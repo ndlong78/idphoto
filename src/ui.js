@@ -184,7 +184,7 @@ export function setFaceStatus(score) {
   }
 }
 
-export function setAiInfoBar(success) {
+export function setAiInfoBar(success, reason = '') {
   const bar = document.getElementById('ai-info-bar');
   bar.replaceChildren();
 
@@ -206,7 +206,8 @@ export function setAiInfoBar(success) {
     const warn = document.createElement('span');
     warn.style.fontSize = '11px';
     warn.style.color = '#fbbf24';
-    warn.textContent = '⚠️ Chưa tải được AI — dùng Flood Fill. Có thể thử lại AI.';
+    const detail = reason ? ` (${reason})` : '';
+    warn.textContent = `⚠️ Chưa tải được AI — dùng Flood Fill. Có thể thử lại AI${detail}.`;
     bar.appendChild(warn);
   }
 }

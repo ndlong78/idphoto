@@ -68,35 +68,34 @@ async function configureOnnxRuntime() {
 }
 
 export async function warmupAi() {
-  // @imgly/background-removal dùng onnxruntime-web và sẽ cố bật đa luồng WASM.
-  // Nếu thiếu crossOriginIsolated, ORT sẽ log cảnh báo numThreads và có thể chạy không ổn định.
-  // Chủ động tắt AI trong môi trường này để tránh lỗi/console noise sau khi upload.
-  if (!globalThis.crossOriginIsolated) {
-    state.aiReady = false;
-    return false;
-  }
-
-  // Chỉ warmup ORT khi đã có COOP/COEP đầy đủ.
+  // Luôn thử warmup AI, kể cả khi không có COOP/COEP.
+  // Trong môi trường không crossOriginIsolated, ORT có thể chạy chậm hơn
+  // nhưng vẫn hoạt động và tốt hơn fallback Flood Fill.
   await configureOnnxRuntime();
 
   const urls = [
     'https://esm.sh/@imgly/background-removal@1.5.5',
     'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
+    'https://unpkg.com/@imgly/background-removal@1.5.5/dist/index.mjs',
   ];
 
+  let lastError = '';
   for (const url of urls) {
     try {
       const mod = await import(url);
       removeBackgroundFn = mod.removeBackground || mod.default?.removeBackground || mod.default;
       if (typeof removeBackgroundFn === 'function') {
         state.aiReady = true;
+        state.aiError = '';
         return true;
       }
-    } catch {
-      // thử URL tiếp theo
+      lastError = `Module AI không export hàm removeBackground (${url})`;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : `Không thể import AI từ ${url}`;
     }
   }
   state.aiReady = false;
+  state.aiError = lastError || 'Không tải được module AI từ CDN';
   return false;
 }
 
@@ -151,30 +150,44 @@ export async function detectFace(canvas) {
 
 export async function runBackgroundRemoval(file, progress) {
   if (!state.aiReady || !removeBackgroundFn) return null;
-  try {
-    const blob = await removeBackgroundFn(file, {
-      publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/',
-      model: 'isnet_fp16',
-      device: 'cpu',
-      debug: false,
-      proxyToWorker: false,
-      output: { format: 'image/png', quality: 1 },
-      progress: (_key, current, total) => {
-        if (typeof progress === 'function') progress(current, total);
-      },
-    });
+  const attempts = [
+    { publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/', model: 'isnet_fp16' },
+    { publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.5.5/dist/', model: 'isnet_fp16' },
+    { publicPath: 'https://unpkg.com/@imgly/background-removal-data@1.5.5/dist/', model: 'isnet_fp16' },
+    { publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/', model: 'isnet' },
+  ];
 
-    return await new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(blob);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        resolve(img);
-      };
-      img.onerror = reject;
-      img.src = url;
-    });
-  } catch {
-    return null;
+  let lastError = '';
+  for (const attempt of attempts) {
+    try {
+      const blob = await removeBackgroundFn(file, {
+        publicPath: attempt.publicPath,
+        model: attempt.model,
+        device: 'cpu',
+        debug: false,
+        proxyToWorker: false,
+        output: { format: 'image/png', quality: 1 },
+        progress: (_key, current, total) => {
+          if (typeof progress === 'function') progress(current, total);
+        },
+      });
+
+      const image = await new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(img);
+        };
+        img.onerror = reject;
+        img.src = url;
+      });
+      state.aiError = '';
+      return image;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : `AI fail at ${attempt.publicPath}`;
+    }
   }
+  state.aiError = lastError || 'AI không thể tải model/background data';
+  return null;
 }
