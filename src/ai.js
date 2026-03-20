@@ -28,8 +28,13 @@ export async function warmupAi() {
 
 export async function loadFaceModels() {
   if (!faceApi) {
-    const mod = await import('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.esm.js');
-    faceApi = mod;
+    try {
+      const mod = await import('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.esm.js');
+      faceApi = mod;
+    } catch {
+      faceApi = null;
+      return false;
+    }
   }
 
   try {
@@ -37,12 +42,18 @@ export async function loadFaceModels() {
       faceApi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_LOCAL),
       faceApi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_LOCAL),
     ]);
+    return true;
   } catch {
     const fallback = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
-    await Promise.all([
-      faceApi.nets.tinyFaceDetector.loadFromUri(fallback),
-      faceApi.nets.faceLandmark68TinyNet.loadFromUri(fallback),
-    ]);
+    try {
+      await Promise.all([
+        faceApi.nets.tinyFaceDetector.loadFromUri(fallback),
+        faceApi.nets.faceLandmark68TinyNet.loadFromUri(fallback),
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

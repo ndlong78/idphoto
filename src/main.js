@@ -41,8 +41,8 @@ async function processFile(file) {
   setLoad('Đang tải thư viện...', '');
 
   pipelineStep = nextStep(pipelineStep);
-  await warmupAi();
-  await loadFaceModels();
+  const aiReady = await warmupAi();
+  const faceReady = await loadFaceModels();
   setLoadStep(1, 'done');
   setProgress(20);
 
@@ -54,16 +54,26 @@ async function processFile(file) {
   setLoadStep(2, 'active');
   setLoad('Nhận dạng khuôn mặt...', '');
   pipelineStep = nextStep(pipelineStep);
-  state.faceData = await detectFace(oc);
+  try {
+    state.faceData = faceReady ? await detectFace(oc) : null;
+  } catch {
+    state.faceData = null;
+  }
   setLoadStep(2, 'done');
   setProgress(35);
 
   setLoadStep(3, 'active');
   setLoad('AI đang tách nền...', 'Lần đầu có thể mất 20–40 giây để tải model');
   pipelineStep = nextStep(pipelineStep);
-  state.aiMaskImg = await runBackgroundRemoval(file, (current, total) => {
-    if (total > 0) setProgress(35 + Math.round((current / total) * 50));
-  });
+  try {
+    state.aiMaskImg = aiReady
+      ? await runBackgroundRemoval(file, (current, total) => {
+        if (total > 0) setProgress(35 + Math.round((current / total) * 50));
+      })
+      : null;
+  } catch {
+    state.aiMaskImg = null;
+  }
   setLoadStep(3, 'done');
 
   setLoadStep(4, 'active');
@@ -78,7 +88,11 @@ async function processFile(file) {
 
   setFaceStatus(state.faceData?.score ?? null);
   setAiInfoBar(Boolean(state.aiMaskImg));
-  toast(state.aiMaskImg ? '✅ AI tách nền thành công!' : '✅ Xử lý xong (flood fill)', 'ok');
+  if (!faceReady && !aiReady) {
+    toast('✅ Đã vào trình chỉnh sửa (thiếu AI do mạng/trình duyệt)', 'ok');
+  } else {
+    toast(state.aiMaskImg ? '✅ AI tách nền thành công!' : '✅ Xử lý xong (flood fill)', 'ok');
+  }
 }
 
 async function handleFile(file) {
