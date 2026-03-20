@@ -15,6 +15,7 @@ export const state = {
   bgColor: { r: 255, g: 255, b: 255 },
   curFmt: 'passport-vn',
   aiReady: false,
+  aiError: '',
   cW: 0,
   cH: 0,
   frame: { x: 0, y: 0, w: 0, h: 0 },
@@ -29,6 +30,7 @@ export function resetState() {
   state.origFile = null;
   state.aiMaskImg = null;
   state.faceData = null;
+  state.aiError = '';
   state.bgColor = { r: 255, g: 255, b: 255 };
   state.curFmt = 'passport-vn';
   state.rv = { scale: 1, tx: 0, ty: 0 };

@@ -88,7 +88,7 @@ async function processFile(file) {
   setSteps(3);
 
   setFaceStatus(state.faceData?.score ?? null);
-  setAiInfoBar(Boolean(state.aiMaskImg));
+  setAiInfoBar(Boolean(state.aiMaskImg), state.aiError);
   if (!faceReady && !aiReady) {
     toast('✅ Đã vào trình chỉnh sửa (thiếu AI do mạng/trình duyệt)', 'ok');
   } else {
@@ -133,7 +133,7 @@ async function reprocessAI() {
     const aiReady = await warmupAi();
     if (!aiReady) {
       toast('⚠️ Chưa tải được AI. Vui lòng kiểm tra mạng và thử lại.', 'err');
-      setAiInfoBar(false);
+      setAiInfoBar(false, state.aiError);
       return;
     }
   }
@@ -142,7 +142,7 @@ async function reprocessAI() {
   if (!state.aiMaskImg) {
     toast('⚠️ AI chưa xử lý được ảnh này. Đang giữ chế độ Flood Fill.', 'err');
   }
-  setAiInfoBar(Boolean(state.aiMaskImg));
+  setAiInfoBar(Boolean(state.aiMaskImg), state.aiError);
   await renderToPreview();
 }
 
