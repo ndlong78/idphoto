@@ -13,6 +13,15 @@ const FACE_API_SCRIPT_SOURCES = [
   'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js',
 ];
 
+// LƯU Ý: @imgly/background-removal bundle ONNX Runtime riêng trong package của nó.
+// Bundle này là một ES module độc lập với env object hoàn toàn tách biệt —
+// không thể can thiệp từ bên ngoài qua globalThis.ort.
+//
+// Cảnh báo "env.wasm.numThreads is set to N, but this will not work unless
+// crossOriginIsolated" xuất hiện vì SharedArrayBuffer không khả dụng trong môi
+// trường không có COOP/COEP header. ORT tự động fallback về single-thread WASM.
+// Đây là warning thông tin, KHÔNG ảnh hưởng chức năng — ảnh vẫn được xử lý đúng.
+
 function loadScriptSequentially(urls) {
   if (faceApiScriptPromise) return faceApiScriptPromise;
 
@@ -40,41 +49,8 @@ function loadScriptSequentially(urls) {
   return faceApiScriptPromise;
 }
 
-async function configureOnnxRuntime() {
-  // Không phụ thuộc crossOriginIsolated: chỉ cần ép numThreads=1
-  // là tránh cảnh báo ORT tự set 8 threads trong môi trường non-isolated.
-  const ortSources = [
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.js',
-    'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/esm/ort.min.js',
-  ];
-
-  for (const url of ortSources) {
-    try {
-      const ort = await import(url);
-      if (ort?.env?.wasm) {
-        ort.env.wasm.numThreads = 1;
-        ort.env.wasm.proxy = false;
-      }
-
-      // Một số bundle chỉ đọc từ globalThis.ort nên đồng bộ cả 2 nơi.
-      if (ort?.env) globalThis.ort = ort;
-      if (globalThis.ort?.env?.wasm) {
-        globalThis.ort.env.wasm.numThreads = 1;
-        globalThis.ort.env.wasm.proxy = false;
-      }
-      return true;
-    } catch {
-      // thử nguồn ORT kế tiếp
-    }
-  }
-  return false;
-}
-
 export async function warmupAi() {
-  // Luôn thử warmup AI, kể cả khi không có COOP/COEP.
-  // Trong môi trường không crossOriginIsolated, ORT có thể chạy chậm hơn
-  // nhưng vẫn hoạt động và tốt hơn fallback Flood Fill.
-  await configureOnnxRuntime();
+  // Không cần cấu hình ORT thủ công — imgly tự quản lý instance ORT của nó.
 
   const urls = [
     'https://esm.sh/@imgly/background-removal@1.5.5',
