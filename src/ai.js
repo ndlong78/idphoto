@@ -20,6 +20,9 @@ const FACE_API_SCRIPT_SOURCES = [
 ];
 
 const BG_REMOVAL_MODULE_SOURCES = [
+  // Ưu tiên esm.sh bundle để tránh lỗi "Failed to resolve module specifier"
+  // khi CDN trả về ESM có bare imports (vd: "ndarray") không tương thích browser import trực tiếp.
+  'https://esm.sh/@imgly/background-removal@1.5.5?bundle',
   'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
 ];
 
@@ -55,6 +58,18 @@ function safeScriptElement(url) {
   script.referrerPolicy = 'no-referrer';
   script.src = url;
   return script;
+}
+
+function normalizeWarmupErrorMessage(rawMessage = '') {
+  const msg = String(rawMessage || '').toLowerCase();
+  if (
+    msg.includes('failed to resolve module specifier')
+    || msg.includes('relative references must start')
+    || msg.includes('ndarray')
+  ) {
+    return 'CDN AI trả về module không tương thích trình duyệt (ESM bare import).';
+  }
+  return String(rawMessage || 'Không tải được module AI từ CDN');
 }
 
 /**
@@ -109,6 +124,7 @@ export async function warmupAi() {
   }
 
   let lastError = '';
+  let lastRawError = '';
   for (const url of BG_REMOVAL_MODULE_SOURCES) {
     try {
       assertAllowedRemoteUrl(url, 'bg_module');
@@ -125,17 +141,28 @@ export async function warmupAi() {
         return true;
       }
       lastError = `Module AI không export hàm removeBackground (${url})`;
+      lastRawError = lastError;
     } catch (err) {
-      lastError = err instanceof Error ? err.message : `Không thể import AI từ ${url}`;
+      const rawError = err instanceof Error ? err.message : `Không thể import AI từ ${url}`;
+      lastRawError = rawError;
+      lastError = normalizeWarmupErrorMessage(rawError);
       // Warmup AI là tính năng tăng cường. Nếu fail thì pipeline vẫn có fallback flood-fill.
       // Ghi nhận ở mức cảnh báo để tránh hiểu nhầm đây là lỗi chặn toàn bộ luồng xử lý.
-      logEvent('ai.warmup_failed_attempt', { source: url, error: lastError }, 'warn');
+      logEvent('ai.warmup_failed_attempt', {
+        source: url,
+        error: lastError,
+        rawError,
+      }, 'warn');
     }
   }
 
   state.aiReady = false;
   state.aiError = lastError || 'Không tải được module AI từ CDN';
-  logEvent('ai.warmup_failed', { error: state.aiError, degradedMode: true }, 'warn');
+  logEvent('ai.warmup_failed', {
+    error: state.aiError,
+    rawError: lastRawError || null,
+    degradedMode: true,
+  }, 'warn');
   return false;
 }
 
