@@ -197,6 +197,10 @@ export function initUI(actions) {
     }, { signal });
   });
 
+  // FIX: zoom-range max tăng từ 600 lên 2500 để khớp với applyZoom giới hạn 25×.
+  // Phiên bản cũ: sau khi pinch-zoom vượt 600%, slider bị kẹt ở max
+  // và syncZoomUI hiển thị "600%" dù scale thực tế là 700%, 800%...
+  // Thay đổi này cần đồng bộ với thuộc tính max="2500" trong index.html.
   document.getElementById('zoom-range').addEventListener('input', (e) => {
     const value = e.target.valueAsNumber / 100;
     applyZoom(value / state.crop.scale, state.cW / 2, state.cH / 2);
@@ -333,10 +337,19 @@ export function toast(message, type = 'ok') {
   toastTimer = window.setTimeout(() => { el.className = ''; }, 3500);
 }
 
+/**
+ * Cập nhật thanh zoom slider và nhãn % theo state.crop.scale hiện tại.
+ *
+ * FIX: Phiên bản cũ clamp slider value về max 600 (= 600%).
+ * applyZoom cho phép scale tới 25× (2500%) qua pinch gesture.
+ * Sau khi pinch vượt 600%, slider "kẹt" ở max, hiển thị 600% dù thực tế 1200%.
+ * Nâng clamp lên 2500 để khớp với giới hạn trong applyZoom.
+ * Cần đồng bộ thuộc tính max="2500" trên <input id="zoom-range"> trong index.html.
+ */
 export function syncZoomUI() {
   const percent = Math.round(state.crop.scale * 100);
   document.getElementById('zoom-lbl').textContent   = `${percent}%`;
-  document.getElementById('zoom-range').value        = `${Math.max(5, Math.min(600, percent))}`;
+  document.getElementById('zoom-range').value        = `${Math.max(5, Math.min(2500, percent))}`;
 }
 
 // ─── Result panel zoom ────────────────────────────────────────────────────────
@@ -441,19 +454,38 @@ export async function download(mode) {
   link.click();
 }
 
+/**
+ * Sao chép ảnh kết quả vào clipboard.
+ *
+ * FIX: Phiên bản cũ throw khi ClipboardItem API không được hỗ trợ
+ * (Firefox < 127, HTTP context không có HTTPS, thiếu user gesture),
+ * khiến caller nhận reject và hiển thị toast lỗi — user mất ảnh.
+ *
+ * Fix: bổ sung fallback tự động mở blob URL trong tab mới.
+ * User có thể nhấn chuột phải → Lưu ảnh mà không mất dữ liệu.
+ * Trả về { method: 'clipboard' | 'newtab' } thay vì void để caller
+ * hiển thị toast message phù hợp với từng trường hợp.
+ *
+ * Blob URL được revoke sau 60s để tránh memory leak — đủ thời gian
+ * để user thực hiện thao tác lưu trên tab mới.
+ */
 export async function copyToClipboard() {
   const canvas = document.getElementById('result-canvas');
-  await new Promise((resolve, reject) => {
-    canvas.toBlob(async (blob) => {
-      if (!blob) return reject(new Error('Không thể tạo blob'));
-      try {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        resolve();
-      } catch (err) {
-        reject(err);
-      }
-    }, 'image/png');
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Không thể tạo blob')), 'image/png');
   });
+
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return { method: 'clipboard' };
+  } catch {
+    // Fallback: mở blob URL trong tab mới để user có thể nhấn chuột phải → Lưu ảnh.
+    // Không re-throw — đây là degraded-but-functional path, không phải failure.
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { method: 'newtab' };
+  }
 }
 
 export function mountEditor() {
