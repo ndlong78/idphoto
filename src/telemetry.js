@@ -93,6 +93,8 @@ export function logEvent(type, payload = {}, level = 'info') {
 
   if (level === 'error') {
     console.error('[telemetry]', event);
+  } else if (level === 'warn') {
+    console.warn('[telemetry]', event);
   } else {
     console.info('[telemetry]', event);
   }
