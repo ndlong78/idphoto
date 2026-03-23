@@ -1,7 +1,10 @@
 export const FMTS = {
+  // FIX: US Visa 51×51mm tại 300DPI = 51/25.4×300 = 602.36 → 602px
+  // Phiên bản cũ hardcode 600×600 (sai 2px), có thể bị từ chối ở một số
+  // cổng kiểm tra kích thước ảnh tự động.
   'passport-vn': { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
   cccd:          { w: 354, h: 472, lbl: '30 × 40 mm', dpi: 300 },
-  'us-visa':     { w: 600, h: 600, lbl: '51 × 51 mm', dpi: 300 },
+  'us-visa':     { w: 602, h: 602, lbl: '51 × 51 mm', dpi: 300 },
   schengen:      { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
   'uk-visa':     { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
   japan:         { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
@@ -46,8 +49,9 @@ export function resetState() {
 export function validateImageFile(file) {
   const hasImageMime = file.type.startsWith('image/');
   const hasImageExt  = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+  // FIX: thêm HEIF vào error message (regex đã hỗ trợ nhưng message thiếu)
   if (!hasImageMime && !hasImageExt)
-    return { ok: false, error: 'Vui lòng chọn file ảnh (JPG/PNG/WEBP/HEIC)!' };
+    return { ok: false, error: 'Vui lòng chọn file ảnh (JPG/PNG/WEBP/HEIC/HEIF)!' };
   if (file.size > 15 * 1024 * 1024)
     return { ok: false, error: 'File quá lớn (tối đa 15MB)' };
   return { ok: true };
