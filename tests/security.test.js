@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assertAllowedRemoteUrl, isAllowedRemoteUrl } from '../src/security.js';
 
-test('isAllowedRemoteUrl: cho phép jsdelivr/staticimgly qua https', () => {
+test('isAllowedRemoteUrl: cho phép jsdelivr/esm/staticimgly qua https', () => {
   assert.equal(isAllowedRemoteUrl('https://cdn.jsdelivr.net/npm/a@1.0.0/file.js'), true);
+  assert.equal(isAllowedRemoteUrl('https://esm.sh/pkg@1.0.0?bundle'), true);
   assert.equal(isAllowedRemoteUrl('https://staticimgly.com/model.bin'), true);
 });
 
