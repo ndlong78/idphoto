@@ -41,8 +41,10 @@ async function processFile(file) {
   setLoad('Đang tải thư viện...', '');
 
   pipelineStep = nextStep(pipelineStep);
-  const aiReady = await warmupAi();
-  const faceReady = await loadFaceModels();
+
+  // FIX 1: warmupAi và loadFaceModels độc lập nhau — chạy song song
+  // giảm thời gian khởi động ~1-3 giây so với chạy tuần tự.
+  const [aiReady, faceReady] = await Promise.all([warmupAi(), loadFaceModels()]);
   setLoadStep(1, 'done');
   setProgress(20);
 
@@ -96,32 +98,6 @@ async function processFile(file) {
   }
 }
 
-async function handleFile(file) {
-  if (isProcessing) {
-    toast('Đang xử lý ảnh trước đó, vui lòng đợi...', 'err');
-    return;
-  }
-
-  const validation = validateImageFile(file);
-  if (!validation.ok) {
-    toast(validation.error, 'err');
-    return;
-  }
-
-  try {
-    isProcessing = true;
-    state.origFile = file;
-    state.origImg = await loadImageFromFile(file);
-    await processFile(file);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Upload thất bại. Vui lòng thử lại.';
-    toast(msg, 'err');
-    setSection('upload');
-  } finally {
-    isProcessing = false;
-  }
-}
-
 async function reprocessAI() {
   if (!state.origFile) {
     toast('Chưa có ảnh', 'err');
@@ -171,3 +147,29 @@ document.addEventListener('DOMContentLoaded', () => {
     onFileInput: (file) => void handleFile(file),
   });
 });
+
+async function handleFile(file) {
+  if (isProcessing) {
+    toast('Đang xử lý ảnh trước đó, vui lòng đợi...', 'err');
+    return;
+  }
+
+  const validation = validateImageFile(file);
+  if (!validation.ok) {
+    toast(validation.error, 'err');
+    return;
+  }
+
+  try {
+    isProcessing = true;
+    state.origFile = file;
+    state.origImg = await loadImageFromFile(file);
+    await processFile(file);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Upload thất bại. Vui lòng thử lại.';
+    toast(msg, 'err');
+    setSection('upload');
+  } finally {
+    isProcessing = false;
+  }
+}
