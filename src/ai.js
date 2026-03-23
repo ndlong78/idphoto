@@ -13,37 +13,34 @@ let faceApiScriptPromise = null;
 let faceModelLoadPromise = null;
 let faceModelsReady = false;
 
-// Hardening: chỉ giữ danh sách CDN đã allowlist + pin version cụ thể.
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
 const FACE_API_SCRIPT_SOURCES = [
   'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js',
 ];
 
-// FIX CSP: Đặt esm.sh?bundle làm nguồn ưu tiên.
+// ── Module sources ─────────────────────────────────────────────────────────
 //
-// Vấn đề gốc rễ:
-//   @imgly/background-removal@1.5.5 trên jsdelivr (dist/index.mjs) có
-//   dynamic import nội bộ hard-code trỏ đến esm.sh. Dù ta chỉ import từ
-//   jsdelivr, trình duyệt vẫn bị CSP chặn khi gói đó tự load esm.sh.
-//
-// Giải pháp hai tầng:
-//   1. CSP (index.html): cho phép https://esm.sh trong script-src + connect-src.
-//   2. ai.js (file này): dùng esm.sh?bundle làm nguồn đầu tiên — bundle này
-//      tự chứa hoàn toàn, không có bare import phụ thuộc bên ngoài, tránh
-//      chuỗi load lồng nhau. jsdelivr giữ nguyên làm fallback.
-//
-// Thứ tự ưu tiên:
-//   esm.sh?bundle  →  bundle tự chứa, sạch nhất
-//   jsdelivr/dist  →  fallback nếu esm.sh không khả dụng
-//                     (dependency esm.sh vẫn được phép qua CSP đã cập nhật)
+// esm.sh?bundle  → bundle tự chứa hoàn toàn, không có internal bare import
+//                  ra ngoài → nguồn sạch nhất, dùng ưu tiên.
+// jsdelivr/dist  → fallback: gói này internal import lại esm.sh nên cần
+//                  CSP cho phép cả hai (đã xử lý trong index.html).
 const BG_REMOVAL_MODULE_SOURCES = [
   'https://esm.sh/@imgly/background-removal@1.5.5?bundle',
   'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
 ];
 
+// ── Data sources ───────────────────────────────────────────────────────────
+//
+// FIX: Xóa jsdelivr data source.
+//
+// Lý do: @imgly/background-removal-data KHÔNG tồn tại như một npm package
+// riêng trên jsdelivr — fetch resources.json luôn trả về 404.
+// Log lỗi: GET https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.5.5/dist/resources.json 404
+//
+// staticimgly.com là CDN chính thức của imgly, luôn có đầy đủ model weights.
+// Chỉ giữ một nguồn duy nhất — sạch hơn và không gây noisy 404 error.
 const BG_REMOVAL_DATA_SOURCES = [
   { publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/', model: 'isnet_fp16' },
-  { publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.5.5/dist/', model: 'isnet_fp16' },
 ];
 
 /**
@@ -83,6 +80,9 @@ function normalizeWarmupErrorMessage(rawMessage = '') {
     || msg.includes('ndarray')
   ) {
     return 'CDN AI trả về module không tương thích trình duyệt (ESM bare import).';
+  }
+  if (msg.includes('wasm') || msg.includes('webassembly')) {
+    return 'WebAssembly bị chặn bởi CSP — kiểm tra lại header server.';
   }
   return String(rawMessage || 'Không tải được module AI từ CDN');
 }
@@ -161,8 +161,6 @@ export async function warmupAi() {
       const rawError = err instanceof Error ? err.message : `Không thể import AI từ ${url}`;
       lastRawError = rawError;
       lastError = normalizeWarmupErrorMessage(rawError);
-      // Warmup AI là tính năng tăng cường. Nếu fail thì pipeline vẫn có fallback flood-fill.
-      // Ghi nhận ở mức cảnh báo để tránh hiểu nhầm đây là lỗi chặn toàn bộ luồng xử lý.
       logEvent('ai.warmup_failed_attempt', {
         source: url,
         error: lastError,
