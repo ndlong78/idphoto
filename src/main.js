@@ -1,5 +1,4 @@
 import { detectFace, loadFaceModels, runBackgroundRemoval, warmupAi } from './ai.js';
-import { initCrop } from './crop.js';
 import { nextStep } from './pipeline.js';
 import { renderToPreview } from './render.js';
 import { state, validateImageFile } from './state.js';
@@ -80,8 +79,9 @@ async function processFile(file) {
   setLoadStep(4, 'active');
   setLoad('Hoàn thiện...', '');
   pipelineStep = nextStep(pipelineStep);
+  // mountEditor() đã gọi initCrop() bên trong — không gọi lại để tránh
+  // đăng ký event listener trùng và tạo rAF loop thứ hai.
   mountEditor();
-  initCrop();
   await renderToPreview();
   setLoadStep(4, 'done');
   setProgress(100);
