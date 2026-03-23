@@ -103,7 +103,12 @@
         <canvas id="crop-canvas"></canvas>
         <div class="zoom-bar">
           <button class="zbtn" id="btn-zoom-minus">−</button>
-          <input type="range" id="zoom-range" min="5" max="600" value="100">
+          <!--
+            FIX: max tăng từ 600 lên 2500 để khớp với giới hạn applyZoom (25× = 2500%).
+            Phiên bản cũ: pinch-zoom vượt 600% khiến slider kẹt ở max,
+            syncZoomUI hiển thị "600%" dù state.crop.scale thực tế lớn hơn nhiều.
+          -->
+          <input type="range" id="zoom-range" min="5" max="2500" value="100">
           <button class="zbtn" id="btn-zoom-plus">+</button>
           <span id="zoom-lbl">100%</span>
         </div>
