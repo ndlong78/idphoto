@@ -21,6 +21,24 @@ let pipelineStep = STEPS.IDLE;
 let isProcessing = false;
 
 /**
+ * Chặn treo vô hạn cho các promise phụ thuộc mạng/CDN.
+ * Nếu quá thời gian, trả về fallbackValue để pipeline vẫn tiếp tục.
+ */
+async function withTimeoutFallback(promise, timeoutMs, fallbackValue) {
+  let timerId = 0;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timerId = window.setTimeout(() => resolve(fallbackValue), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timerId) window.clearTimeout(timerId);
+  }
+}
+
+/**
  * Đọc file ảnh từ thiết bị thành HTMLImageElement.
  *
  * FIX: Phiên bản cũ trả về thông báo lỗi generic cho mọi img.onerror.
@@ -59,9 +77,14 @@ async function processFile(file) {
 
   pipelineStep = nextStep(pipelineStep);  // idle → loading_libs
 
-  // warmupAi và loadFaceModels độc lập nhau — chạy song song
-  // giảm thời gian khởi động ~1–3 giây so với chạy tuần tự.
-  const [aiReady, faceReady] = await Promise.all([warmupAi(), loadFaceModels()]);
+  // warmupAi/loadFaceModels phụ thuộc mạng CDN, có thể treo request ở một số
+  // mạng công ty/vpn/proxy. Dùng timeout để luôn thoát khỏi bước loading.
+  const [aiReadyRaw, faceReadyRaw] = await Promise.all([
+    withTimeoutFallback(warmupAi(), 25_000, false),
+    withTimeoutFallback(loadFaceModels(), 15_000, false),
+  ]);
+  const aiReady = Boolean(aiReadyRaw);
+  const faceReady = Boolean(faceReadyRaw);
   setLoadStep(1, 'done');
   setProgress(20);
 
