@@ -154,13 +154,47 @@ function floodFill(imgData, tol) {
 
 function featherMask(mask, W, H, radius) {
   if (radius <= 0) return;
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
+
+  // Distance transform rút gọn: với mỗi pixel foreground (mask=255) gần biên,
+  // tính khoảng cách Manhattan đến pixel background (mask=0) gần nhất bằng
+  // hai lượt quét (top-left → bottom-right rồi ngược lại).
+  // Alpha cuối = clamp(dist / radius, 0, 1) → gradient mịn từ 0 đến 255.
+  const dist = new Float32Array(W * H).fill(radius + 1);
+
+  // Khởi tạo: pixel nền = 0, pixel foreground = radius+1
+  for (let i = 0; i < W * H; i++) {
+    if (mask[i] === 0) dist[i] = 0;
+  }
+
+  // Pass 1: top-left → bottom-right
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
       const i = y * W + x;
-      if (mask[i] !== 255) continue;
-      const edge = mask[i - 1] === 0 || mask[i + 1] === 0 || mask[i - W] === 0 || mask[i + W] === 0;
-      if (edge) mask[i] = 180;
+      if (mask[i] === 0) continue;
+      if (x > 0)     dist[i] = Math.min(dist[i], dist[i - 1]     + 1);
+      if (y > 0)     dist[i] = Math.min(dist[i], dist[i - W]     + 1);
+      if (x > 0 && y > 0) dist[i] = Math.min(dist[i], dist[i - W - 1] + 1.414);
+      if (x < W - 1 && y > 0) dist[i] = Math.min(dist[i], dist[i - W + 1] + 1.414);
     }
+  }
+
+  // Pass 2: bottom-right → top-left
+  for (let y = H - 1; y >= 0; y--) {
+    for (let x = W - 1; x >= 0; x--) {
+      const i = y * W + x;
+      if (mask[i] === 0) continue;
+      if (x < W - 1) dist[i] = Math.min(dist[i], dist[i + 1]     + 1);
+      if (y < H - 1) dist[i] = Math.min(dist[i], dist[i + W]     + 1);
+      if (x < W - 1 && y < H - 1) dist[i] = Math.min(dist[i], dist[i + W + 1] + 1.414);
+      if (x > 0 && y < H - 1)     dist[i] = Math.min(dist[i], dist[i + W - 1] + 1.414);
+    }
+  }
+
+  // Ghi lại alpha dựa trên khoảng cách: trong vùng [0, radius] → fade 0→255
+  for (let i = 0; i < W * H; i++) {
+    if (mask[i] === 0) continue;
+    const alpha = Math.min(dist[i] / radius, 1);
+    mask[i] = Math.round(alpha * 255);
   }
 }
 
