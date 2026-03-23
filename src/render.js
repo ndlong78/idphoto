@@ -22,8 +22,20 @@ export async function renderResult(scale = 1) {
     const mctx = maskCanvas.getContext('2d');
     if (mctx) {
       mctx.drawImage(state.aiMaskImg, crop.x, crop.y, crop.w, crop.h, 0, 0, out.width, out.height);
-      const mask = mctx.getImageData(0, 0, out.width, out.height).data;
-      blendWithMask(imageData.data, mask, bg);
+      const maskData = mctx.getImageData(0, 0, out.width, out.height);
+
+      // FIX 2: Feather áp dụng lên alpha channel của AI mask.
+      // Trước đây slider "Mịn viền" chỉ có tác dụng ở chế độ flood fill,
+      // gây nhầm lẫn vì người dùng thấy slider nhưng không thấy kết quả.
+      const featherRadius = getControls().feather.valueAsNumber;
+      if (featherRadius > 0) {
+        const alpha = new Uint8Array(out.width * out.height);
+        for (let i = 0; i < alpha.length; i++) alpha[i] = maskData.data[i * 4 + 3];
+        featherMask(alpha, out.width, out.height, featherRadius);
+        for (let i = 0; i < alpha.length; i++) maskData.data[i * 4 + 3] = alpha[i];
+      }
+
+      blendWithMask(imageData.data, maskData.data, bg);
     }
   } else {
     const mask = floodFill(imageData, 44);
