@@ -1,5 +1,11 @@
 const MAX_EVENTS = 200;
 const STORAGE_KEY = 'idphoto.telemetry.events';
+const LOG_LEVEL_RANK = {
+  silent: 0,
+  error:  1,
+  warn:   2,
+  info:   3,
+};
 
 function nowIso() {
   return new Date().toISOString();
@@ -77,6 +83,20 @@ function sendToEndpoint(event) {
   }
 }
 
+function resolveConsoleLevel() {
+  const configured = globalThis?.__IDPHOTO_CONFIG__?.telemetryConsoleLevel;
+  if (typeof configured !== 'string') return 'error';
+  const normalized = configured.toLowerCase();
+  return Object.hasOwn(LOG_LEVEL_RANK, normalized) ? normalized : 'error';
+}
+
+function shouldLogToConsole(level) {
+  const wanted = resolveConsoleLevel();
+  const eventRank = LOG_LEVEL_RANK[level] ?? LOG_LEVEL_RANK.info;
+  const wantedRank = LOG_LEVEL_RANK[wanted] ?? LOG_LEVEL_RANK.error;
+  return eventRank <= wantedRank;
+}
+
 export function logEvent(type, payload = {}, level = 'info') {
   const event = {
     id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -91,12 +111,14 @@ export function logEvent(type, payload = {}, level = 'info') {
   events.push(event);
   saveBuffer(events);
 
-  if (level === 'error') {
-    console.error('[telemetry]', event);
-  } else if (level === 'warn') {
-    console.warn('[telemetry]', event);
-  } else {
-    console.info('[telemetry]', event);
+  if (shouldLogToConsole(level)) {
+    if (level === 'error') {
+      console.error('[telemetry]', event);
+    } else if (level === 'warn') {
+      console.warn('[telemetry]', event);
+    } else {
+      console.info('[telemetry]', event);
+    }
   }
 
   sendToEndpoint(event);
