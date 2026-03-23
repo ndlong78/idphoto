@@ -1,17 +1,18 @@
 import { applyZoom, centerFace, cleanupCropEvents, computeFrame, fitImage, initCrop } from './crop.js';
 import { renderResult, renderToPreview } from './render.js';
 import { FMTS, resetState, state } from './state.js';
+import { SKIN_DEBOUNCE_MS, FEATHER_DEBOUNCE_MS } from './constants.js';
 
 let toastTimer = null;
 let uiController = null;
 
 export function getControls() {
   return {
-    bright: document.getElementById('bright'),
+    bright:   document.getElementById('bright'),
     contrast: document.getElementById('contrast'),
-    sharp: document.getElementById('sharp'),
-    skin: document.getElementById('skin'),
-    feather: document.getElementById('feather'),
+    sharp:    document.getElementById('sharp'),
+    skin:     document.getElementById('skin'),
+    feather:  document.getElementById('feather'),
   };
 }
 
@@ -21,9 +22,12 @@ export function initUI(actions) {
   const { signal } = uiController;
 
   const uploadZone = document.getElementById('upload-zone');
-  const fileInput = document.getElementById('file-input');
+  const fileInput  = document.getElementById('file-input');
 
-  uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('drag'); }, { signal });
+  uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('drag');
+  }, { signal });
   uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag'), { signal });
   uploadZone.addEventListener('drop', (e) => {
     e.preventDefault();
@@ -43,19 +47,17 @@ export function initUI(actions) {
     actions.onPickFile();
   }, { signal });
 
-  // #btn-pick đang là <label for="file-input"> nên browser tự mở file picker.
-  // Không bind thêm click() để tránh mở picker 2 lần và gây cảm giác phải upload 2 lần.
   bindAsyncClick('btn-reprocess', actions.onReprocessAI, signal);
-  bindClick('btn-reset-face', () => { centerFace(); void renderToPreview(); }, signal);
+  bindClick('btn-reset-face', () => { centerFace(); void safeRender(); }, signal);
   bindClick('btn-fit', () => fitImage(true), signal);
   bindClick('btn-zoom-minus', () => applyZoom(0.85, state.cW / 2, state.cH / 2), signal);
-  bindClick('btn-zoom-plus', () => applyZoom(1.15, state.cW / 2, state.cH / 2), signal);
+  bindClick('btn-zoom-plus',  () => applyZoom(1.15, state.cW / 2, state.cH / 2), signal);
 
   bindClick('btn-result-minus', () => zoomResult(-1), signal);
-  bindClick('btn-result-plus', () => zoomResult(1), signal);
-  bindClick('btn-result-fit', () => zoomResultFit(), signal);
+  bindClick('btn-result-plus',  () => zoomResult(1),  signal);
+  bindClick('btn-result-fit',   () => zoomResultFit(), signal);
 
-  // Scroll zoom và drag cho result panel — phản ánh đúng hint "Cuộn để zoom · Kéo để di chuyển"
+  // Scroll zoom & drag cho result panel
   const prevWrap = document.getElementById('prev-wrap');
 
   prevWrap.addEventListener('wheel', (e) => {
@@ -82,7 +84,7 @@ export function initUI(actions) {
 
   window.addEventListener('mouseup', () => { rvDragging = false; }, { signal });
 
-  // Touch pinch-to-zoom và drag cho result panel
+  // Touch pinch-to-zoom & drag cho result panel
   let rvTouchLast = { x: 0, y: 0 };
   let rvPinchLast = 0;
 
@@ -111,13 +113,12 @@ export function initUI(actions) {
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY,
       );
-      const factor = d / rvPinchLast;
-      const next = Math.max(0.25, Math.min(8, state.rv.scale * factor));
-      const sf = next / state.rv.scale;
-      state.rv.tx *= sf;
-      state.rv.ty *= sf;
+      const next = Math.max(0.25, Math.min(8, state.rv.scale * (d / rvPinchLast)));
+      const sf   = next / state.rv.scale;
+      state.rv.tx   *= sf;
+      state.rv.ty   *= sf;
       state.rv.scale = next;
-      rvPinchLast = d;
+      rvPinchLast    = d;
       applyResultTransform();
     }
   }, { passive: false, signal });
@@ -125,15 +126,15 @@ export function initUI(actions) {
   prevWrap.addEventListener('touchend', () => { rvDragging = false; rvPinchLast = 0; }, { signal });
 
   bindClick('btn-open-lightbox', () => openLightbox(), signal);
-  bindClick('btn-lb-close', () => closeLightbox(), signal);
-  bindClick('btn-lb-minus', () => lightboxZoom(-1), signal);
-  bindClick('btn-lb-plus', () => lightboxZoom(1), signal);
-  bindClick('btn-lb-fit', () => lightboxZoomFit(), signal);
+  bindClick('btn-lb-close',  () => closeLightbox(),   signal);
+  bindClick('btn-lb-minus',  () => lightboxZoom(-1),  signal);
+  bindClick('btn-lb-plus',   () => lightboxZoom(1),   signal);
+  bindClick('btn-lb-fit',    () => lightboxZoomFit(), signal);
 
   bindAsyncClick('btn-jpg-600', () => actions.onDownload('jpeg600'), signal);
-  bindAsyncClick('btn-png-600', () => actions.onDownload('png600'), signal);
+  bindAsyncClick('btn-png-600', () => actions.onDownload('png600'),  signal);
   bindAsyncClick('btn-jpg-300', () => actions.onDownload('jpeg300'), signal);
-  bindAsyncClick('btn-copy', actions.onCopy, signal);
+  bindAsyncClick('btn-copy',    actions.onCopy, signal);
 
   bindClick('btn-reset-app', () => {
     cleanupCropEvents();
@@ -148,7 +149,7 @@ export function initUI(actions) {
       btn.classList.add('active');
       state.curFmt = btn.dataset.fmt;
       computeFrame();
-      void renderToPreview();
+      void safeRender();
       document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
     }, { signal });
   });
@@ -159,24 +160,39 @@ export function initUI(actions) {
       sw.classList.add('active');
       const [r, g, b] = (sw.dataset.c ?? '255,255,255').split(',').map(Number);
       state.bgColor = { r, g, b };
-      void renderToPreview();
+      void safeRender();
     }, { signal });
   });
 
-  // Slider skin dùng debounce 250 ms vì boxBlurRGB + getImageData/putImageData
-  // trên main thread có thể mất 60–90 ms (Chrome gắn cờ >50ms là violation).
-  // Các slider còn lại (brightness, contrast, sharp, feather) render real-time.
-  let skinDebounceTimer = 0;
+  // ── Slider event handlers ────────────────────────────────────────────────
+  //
+  // FIX: Bọc renderToPreview() trong try/catch (safeRender) để lỗi trong
+  // pipeline render (ví dụ: canvas bị detach, state bị corrupt) không trở
+  // thành unhandled rejection và gây im lặng hoàn toàn với user.
+  //
+  // FIX: Thêm debounce cho feather slider.
+  // featherMask() chạy distance transform O(W·H) — đủ nặng để giật
+  // khi kéo nhanh. Dùng FEATHER_DEBOUNCE_MS (150ms) thay vì real-time.
+  //
+  // skin đã được debounce SKIN_DEBOUNCE_MS (250ms) từ trước vì
+  // boxBlurRGB + getImageData/putImageData có thể >50ms.
+
+  let skinDebounceTimer    = 0;
+  let featherDebounceTimer = 0;
 
   [['bright', 'bv'], ['contrast', 'cv'], ['sharp', 'sv'], ['skin', 'skv'], ['feather', 'fv']].forEach(([id, lblId]) => {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
       document.getElementById(lblId).textContent = input.value;
+
       if (id === 'skin') {
         clearTimeout(skinDebounceTimer);
-        skinDebounceTimer = window.setTimeout(() => void renderToPreview(), 250);
+        skinDebounceTimer = window.setTimeout(() => void safeRender(), SKIN_DEBOUNCE_MS);
+      } else if (id === 'feather') {
+        clearTimeout(featherDebounceTimer);
+        featherDebounceTimer = window.setTimeout(() => void safeRender(), FEATHER_DEBOUNCE_MS);
       } else {
-        void renderToPreview();
+        void safeRender();
       }
     }, { signal });
   });
@@ -191,6 +207,23 @@ export function initUI(actions) {
 
   setSection('upload');
 }
+
+// ─── Safe render wrapper ─────────────────────────────────────────────────────
+//
+// Bọc renderToPreview() trong try/catch để lỗi trong pipeline render
+// (ví dụ canvas detach, state corrupt) được hiển thị qua toast thay vì
+// im lặng hoàn toàn hoặc crash unhandled.
+
+async function safeRender() {
+  try {
+    await renderToPreview();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Lỗi render không xác định';
+    toast(`⚠️ Lỗi hiển thị: ${msg}`, 'err');
+  }
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function bindClick(id, fn, signal) {
   const el = document.getElementById(id);
@@ -209,6 +242,8 @@ function bindAsyncClick(id, fn, signal) {
     }
   }, { signal });
 }
+
+// ─── Section management ───────────────────────────────────────────────────────
 
 export function setSection(section) {
   state.section = section;
@@ -231,14 +266,14 @@ export function setSteps(active) {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById(`s${i}`);
     el.className = 'step';
-    if (i < active) el.classList.add('done');
+    if (i < active)      el.classList.add('done');
     else if (i === active) el.classList.add('active');
   }
 }
 
 export function setLoad(title, sub) {
   document.getElementById('load-title').textContent = title;
-  document.getElementById('load-sub').textContent = sub;
+  document.getElementById('load-sub').textContent   = sub;
 }
 
 export function setProgress(percent) {
@@ -254,10 +289,10 @@ export function setFaceStatus(score) {
   const bar = document.getElementById('face-bar');
   const txt = document.getElementById('face-txt');
   if (score !== null) {
-    bar.className = 'fstatus ok';
+    bar.className  = 'fstatus ok';
     txt.textContent = `Nhận dạng khuôn mặt (${Math.round(score * 100)}%)`;
   } else {
-    bar.className = 'fstatus warn';
+    bar.className  = 'fstatus warn';
     txt.textContent = 'Không tìm thấy khuôn mặt — căn giữa tự động';
   }
 }
@@ -277,15 +312,15 @@ export function setAiInfoBar(success, reason = '') {
 
     const hint = document.createElement('span');
     hint.style.fontSize = '10px';
-    hint.style.color = '#4a5568';
-    hint.textContent = '🔄 Bạn có thể bấm AI để xử lý lại';
+    hint.style.color    = '#4a5568';
+    hint.textContent    = '🔄 Bạn có thể bấm AI để xử lý lại';
     bar.append(tag, hint);
   } else {
     const warn = document.createElement('span');
     warn.style.fontSize = '11px';
-    warn.style.color = '#fbbf24';
+    warn.style.color    = '#fbbf24';
     const detail = reason ? ` (${reason})` : '';
-    warn.textContent = `⚠️ Chưa tải được AI — dùng Flood Fill. Có thể thử lại AI${detail}.`;
+    warn.textContent    = `⚠️ Chưa tải được AI — dùng Flood Fill. Có thể thử lại AI${detail}.`;
     bar.appendChild(warn);
   }
 }
@@ -293,40 +328,43 @@ export function setAiInfoBar(success, reason = '') {
 export function toast(message, type = 'ok') {
   const el = document.getElementById('toast');
   el.textContent = message;
-  el.className = `show ${type}`;
+  el.className   = `show ${type}`;
   if (toastTimer) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
-    el.className = '';
-  }, 3500);
+  toastTimer = window.setTimeout(() => { el.className = ''; }, 3500);
 }
 
 export function syncZoomUI() {
   const percent = Math.round(state.crop.scale * 100);
-  document.getElementById('zoom-lbl').textContent = `${percent}%`;
-  document.getElementById('zoom-range').value = `${Math.max(5, Math.min(600, percent))}`;
+  document.getElementById('zoom-lbl').textContent   = `${percent}%`;
+  document.getElementById('zoom-range').value        = `${Math.max(5, Math.min(600, percent))}`;
 }
+
+// ─── Result panel zoom ────────────────────────────────────────────────────────
 
 function zoomResult(dir) {
   const next = Math.max(0.25, Math.min(8, state.rv.scale * (dir > 0 ? 1.4 : 0.71)));
-  const sf = next / state.rv.scale;
-  state.rv.tx *= sf;
-  state.rv.ty *= sf;
+  const sf   = next / state.rv.scale;
+  state.rv.tx   *= sf;
+  state.rv.ty   *= sf;
   state.rv.scale = next;
   applyResultTransform();
 }
 
 function zoomResultFit() {
   state.rv.scale = 1;
-  state.rv.tx = 0;
-  state.rv.ty = 0;
+  state.rv.tx    = 0;
+  state.rv.ty    = 0;
   applyResultTransform();
 }
 
 function applyResultTransform() {
   const canvas = document.getElementById('result-canvas');
   canvas.style.transform = `translate(${state.rv.tx}px, ${state.rv.ty}px) scale(${state.rv.scale})`;
-  document.getElementById('zoom-out-lbl').textContent = state.rv.scale === 1 ? '1×' : `${Math.round(state.rv.scale * 100)}%`;
+  document.getElementById('zoom-out-lbl').textContent =
+    state.rv.scale === 1 ? '1×' : `${Math.round(state.rv.scale * 100)}%`;
 }
+
+// ─── Lightbox ─────────────────────────────────────────────────────────────────
 
 function openLightbox() {
   const src = document.getElementById('result-canvas');
@@ -336,15 +374,15 @@ function openLightbox() {
   }
 
   const dst = document.getElementById('lightbox-canvas');
-  dst.width = src.width;
+  dst.width  = src.width;
   dst.height = src.height;
   dst.getContext('2d')?.drawImage(src, 0, 0);
 
-  const maxW = window.innerWidth * 0.88;
+  const maxW = window.innerWidth  * 0.88;
   const maxH = window.innerHeight * 0.78;
   state.lb.scale = Math.min(1, maxW / src.width, maxH / src.height);
-  state.lb.tx = 0;
-  state.lb.ty = 0;
+  state.lb.tx    = 0;
+  state.lb.ty    = 0;
   applyLightboxTransform();
 
   document.getElementById('result-lightbox').classList.add('open');
@@ -360,32 +398,46 @@ function lightboxZoom(dir) {
 }
 
 function lightboxZoomFit() {
-  const c = document.getElementById('lightbox-canvas');
-  const maxW = window.innerWidth * 0.88;
+  const c    = document.getElementById('lightbox-canvas');
+  const maxW = window.innerWidth  * 0.88;
   const maxH = window.innerHeight * 0.78;
   state.lb.scale = Math.min(1, maxW / c.width, maxH / c.height);
-  state.lb.tx = 0;
-  state.lb.ty = 0;
+  state.lb.tx    = 0;
+  state.lb.ty    = 0;
   applyLightboxTransform();
 }
 
 function applyLightboxTransform() {
   const c = document.getElementById('lightbox-canvas');
-  c.style.width = `${Math.round(c.width * state.lb.scale)}px`;
-  c.style.height = `${Math.round(c.height * state.lb.scale)}px`;
+  c.style.width     = `${Math.round(c.width  * state.lb.scale)}px`;
+  c.style.height    = `${Math.round(c.height * state.lb.scale)}px`;
   c.style.transform = `translate(${state.lb.tx}px, ${state.lb.ty}px)`;
   document.getElementById('lb-lbl').textContent = `${Math.round(state.lb.scale * 100)}%`;
 }
 
+// ─── Download ─────────────────────────────────────────────────────────────────
+//
+// FIX: Tính targetDpi và scale từ fmt.dpi thay vì hardcode 300/600.
+// Nếu sau này thêm format với dpi khác (ví dụ 200 DPI cho web),
+// filename và kích thước xuất sẽ vẫn đúng tự động.
+//
+// mode → targetDpi:
+//   'jpeg300' → baseDpi      (scale = 1)
+//   'jpeg600' → baseDpi × 2  (scale = 2)
+//   'png600'  → baseDpi × 2  (scale = 2)
+
 export async function download(mode) {
-  const hiRes = mode === 'jpeg300' ? await renderResult(1) : await renderResult(2);
-  const fmt = FMTS[state.curFmt];
-  const ext = mode.includes('png') ? 'png' : 'jpeg';
-  const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
-  const scale = mode === 'jpeg300' ? 1 : 2;
-  const link = document.createElement('a');
-  link.download = `photovisa_${state.curFmt}_${fmt.w * scale}x${fmt.h * scale}_${scale === 2 ? 600 : 300}dpi.${ext}`;
-  link.href = hiRes.toDataURL(mime, 1);
+  const fmt     = FMTS[state.curFmt];
+  const baseDpi = fmt.dpi;
+  const targetDpi = mode === 'jpeg300' ? baseDpi : baseDpi * 2;
+  const scale     = targetDpi / baseDpi;   // 1 hoặc 2
+  const ext  = mode.includes('png') ? 'png'      : 'jpeg';
+  const mime = ext === 'png'        ? 'image/png' : 'image/jpeg';
+
+  const hiRes = await renderResult(scale);
+  const link  = document.createElement('a');
+  link.download = `photovisa_${state.curFmt}_${fmt.w * scale}x${fmt.h * scale}_${targetDpi}dpi.${ext}`;
+  link.href     = hiRes.toDataURL(mime, 1);
   link.click();
 }
 
