@@ -61,7 +61,10 @@ export function initCrop() {
   }, { passive: false, signal });
 
   canvas.addEventListener('touchstart', (e) => {
-    e.preventDefault();
+    // Chỉ preventDefault khi event còn cancelable — browser đôi khi đánh dấu
+    // touchstart là non-cancelable khi scroll đang chạy, gọi preventDefault
+    // lúc đó gây "[Intervention] Ignored attempt to cancel" warning.
+    if (e.cancelable) e.preventDefault();
     if (e.touches.length === 1) {
       dragging = true;
       lastPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
