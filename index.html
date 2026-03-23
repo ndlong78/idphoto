@@ -3,7 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; img-src 'self' data: blob: https://staticimgly.com https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' blob: https://staticimgly.com https://cdn.jsdelivr.net; worker-src 'self' blob:;">
+  <!--
+    CSP FIX: thêm https://esm.sh vào script-src và connect-src.
+
+    Lý do: @imgly/background-removal@1.5.5 trên jsdelivr (dist/index.mjs)
+    có dynamic import nội bộ trỏ đến esm.sh. Dù ta không import esm.sh
+    trực tiếp, trình duyệt vẫn bị CSP chặn khi gói jsdelivr tự load nó.
+
+    Giải pháp: cho phép esm.sh trong CSP VÀ dùng esm.sh?bundle làm nguồn
+    ưu tiên trong ai.js — bundle này tự chứa hoàn toàn, không cần load thêm.
+  -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; img-src 'self' data: blob: https://staticimgly.com https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' blob: https://staticimgly.com https://cdn.jsdelivr.net https://esm.sh; worker-src 'self' blob:;">
   <title>PhotoVisa — Ảnh Hộ Chiếu & Visa</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Ctext y=%2750%27 font-size=%2748%27%3E%F0%9F%93%B7%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
