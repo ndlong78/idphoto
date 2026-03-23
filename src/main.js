@@ -20,13 +20,30 @@ import {
 let pipelineStep = STEPS.IDLE;
 let isProcessing = false;
 
+/**
+ * Đọc file ảnh từ thiết bị thành HTMLImageElement.
+ *
+ * FIX: Phiên bản cũ trả về thông báo lỗi generic cho mọi img.onerror.
+ * HEIC/HEIF silent fail trên Chrome/Firefox (browser không decode natively)
+ * khiến user không hiểu nguyên nhân lỗi.
+ *
+ * Fix: detect định dạng HEIC/HEIF qua tên file và mime type,
+ * trả về thông báo hướng dẫn cụ thể thay vì "Hãy thử đổi ảnh sang JPG".
+ */
 function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload  = () => resolve(img);
-      img.onerror = () => reject(new Error('Không đọc được ảnh từ thiết bị. Hãy thử đổi ảnh sang JPG hoặc PNG.'));
+      img.onerror = () => {
+        const isHeic = /\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type);
+        reject(new Error(
+          isHeic
+            ? 'Trình duyệt này không hỗ trợ HEIC/HEIF. Vui lòng chuyển ảnh sang JPG hoặc PNG trước khi upload (dùng app Ảnh trên iOS hoặc công cụ chuyển đổi online).'
+            : 'Không đọc được ảnh từ thiết bị. Hãy thử đổi ảnh sang JPG hoặc PNG.',
+        ));
+      };
       img.src = String(e.target?.result ?? '');
     };
     reader.onerror = () => reject(new Error('Không thể đọc file ảnh.'));
@@ -136,9 +153,16 @@ document.addEventListener('DOMContentLoaded', () => {
       setSteps(4);
       toast('✅ Đã tải ảnh thành công', 'ok');
     },
+    // FIX: copyToClipboard() giờ trả về { method: 'clipboard' | 'newtab' }
+    // thay vì throw khi browser không hỗ trợ ClipboardItem API.
+    // Toast message thay đổi theo method để user biết chuyện gì đã xảy ra.
     onCopy: async () => {
-      await copyToClipboard();
-      toast('📋 Đã sao chép!', 'ok');
+      const result = await copyToClipboard();
+      if (result.method === 'clipboard') {
+        toast('📋 Đã sao chép!', 'ok');
+      } else {
+        toast('🖼️ Trình duyệt không hỗ trợ sao chép — đã mở ảnh trong tab mới.', 'ok');
+      }
     },
     onFileDrop:  (file) => void handleFile(file),
     onFileInput: (file) => void handleFile(file),
