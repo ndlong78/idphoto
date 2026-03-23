@@ -4,16 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!--
-    CSP FIX: thêm https://esm.sh vào script-src và connect-src.
+    CSP changelog:
 
-    Lý do: @imgly/background-removal@1.5.5 trên jsdelivr (dist/index.mjs)
-    có dynamic import nội bộ trỏ đến esm.sh. Dù ta không import esm.sh
-    trực tiếp, trình duyệt vẫn bị CSP chặn khi gói jsdelivr tự load nó.
+    v1: thêm https://esm.sh → fix "Loading script esm.sh violates CSP"
 
-    Giải pháp: cho phép esm.sh trong CSP VÀ dùng esm.sh?bundle làm nguồn
-    ưu tiên trong ai.js — bundle này tự chứa hoàn toàn, không cần load thêm.
+    v2 (lần này): thêm 'wasm-unsafe-eval' → fix lỗi:
+        "WebAssembly.instantiate() violates CSP because 'unsafe-eval'
+         is not an allowed source"
+
+      'wasm-unsafe-eval' CHỈ cấp quyền eval cho WASM binary,
+      KHÔNG cấp cho JS eval() — an toàn hơn 'unsafe-eval' thông thường.
+      Đây là directive W3C khuyến nghị cho ứng dụng dùng WASM (onnxruntime).
   -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; img-src 'self' data: blob: https://staticimgly.com https://cdn.jsdelivr.net; script-src 'self' https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' blob: https://staticimgly.com https://cdn.jsdelivr.net https://esm.sh; worker-src 'self' blob:;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; img-src 'self' data: blob: https://staticimgly.com https://cdn.jsdelivr.net; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' blob: https://staticimgly.com https://cdn.jsdelivr.net https://esm.sh; worker-src 'self' blob:;">
   <title>PhotoVisa — Ảnh Hộ Chiếu & Visa</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Ctext y=%2750%27 font-size=%2748%27%3E%F0%9F%93%B7%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -113,11 +116,6 @@
         <canvas id="crop-canvas"></canvas>
         <div class="zoom-bar">
           <button class="zbtn" id="btn-zoom-minus">−</button>
-          <!--
-            FIX: max tăng từ 600 lên 2500 để khớp với giới hạn applyZoom (25× = 2500%).
-            Phiên bản cũ: pinch-zoom vượt 600% khiến slider kẹt ở max,
-            syncZoomUI hiển thị "600%" dù state.crop.scale thực tế lớn hơn nhiều.
-          -->
           <input type="range" id="zoom-range" min="5" max="2500" value="100">
           <button class="zbtn" id="btn-zoom-plus">+</button>
           <span id="zoom-lbl">100%</span>
