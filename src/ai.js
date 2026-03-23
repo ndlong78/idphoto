@@ -19,9 +19,25 @@ const FACE_API_SCRIPT_SOURCES = [
   'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js',
 ];
 
+// FIX CSP: Đặt esm.sh?bundle làm nguồn ưu tiên.
+//
+// Vấn đề gốc rễ:
+//   @imgly/background-removal@1.5.5 trên jsdelivr (dist/index.mjs) có
+//   dynamic import nội bộ hard-code trỏ đến esm.sh. Dù ta chỉ import từ
+//   jsdelivr, trình duyệt vẫn bị CSP chặn khi gói đó tự load esm.sh.
+//
+// Giải pháp hai tầng:
+//   1. CSP (index.html): cho phép https://esm.sh trong script-src + connect-src.
+//   2. ai.js (file này): dùng esm.sh?bundle làm nguồn đầu tiên — bundle này
+//      tự chứa hoàn toàn, không có bare import phụ thuộc bên ngoài, tránh
+//      chuỗi load lồng nhau. jsdelivr giữ nguyên làm fallback.
+//
+// Thứ tự ưu tiên:
+//   esm.sh?bundle  →  bundle tự chứa, sạch nhất
+//   jsdelivr/dist  →  fallback nếu esm.sh không khả dụng
+//                     (dependency esm.sh vẫn được phép qua CSP đã cập nhật)
 const BG_REMOVAL_MODULE_SOURCES = [
-  // Chỉ dùng jsdelivr để khớp CSP hiện tại (script-src/connect-src).
-  // Tránh cố import esm.sh vì sẽ luôn bị CSP chặn và gây noisy error trên console.
+  'https://esm.sh/@imgly/background-removal@1.5.5?bundle',
   'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
 ];
 
