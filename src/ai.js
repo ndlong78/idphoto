@@ -127,13 +127,15 @@ export async function warmupAi() {
       lastError = `Module AI không export hàm removeBackground (${url})`;
     } catch (err) {
       lastError = err instanceof Error ? err.message : `Không thể import AI từ ${url}`;
-      logEvent('ai.warmup_failed_attempt', { source: url, error: lastError }, 'error');
+      // Warmup AI là tính năng tăng cường. Nếu fail thì pipeline vẫn có fallback flood-fill.
+      // Ghi nhận ở mức cảnh báo để tránh hiểu nhầm đây là lỗi chặn toàn bộ luồng xử lý.
+      logEvent('ai.warmup_failed_attempt', { source: url, error: lastError }, 'warn');
     }
   }
 
   state.aiReady = false;
   state.aiError = lastError || 'Không tải được module AI từ CDN';
-  logEvent('ai.warmup_failed', { error: state.aiError }, 'error');
+  logEvent('ai.warmup_failed', { error: state.aiError, degradedMode: true }, 'warn');
   return false;
 }
 
@@ -242,11 +244,11 @@ export async function runBackgroundRemoval(file, progress) {
         source: attempt.publicPath,
         model: attempt.model,
         error: lastError,
-      }, 'error');
+      }, 'warn');
     }
   }
 
   state.aiError = lastError || 'AI không thể tải model/background data';
-  logEvent('ai.bg_remove_failed', { error: state.aiError }, 'error');
+  logEvent('ai.bg_remove_failed', { error: state.aiError, degradedMode: true }, 'warn');
   return null;
 }
