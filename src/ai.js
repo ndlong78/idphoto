@@ -1,4 +1,9 @@
 import { state } from './state.js';
+import {
+  AI_TIMEOUT_MS,
+  FACE_DETECT_INPUT_SIZE,
+  FACE_DETECT_THRESHOLD,
+} from './constants.js';
 
 let removeBackgroundFn = null;
 let faceApi = null;
@@ -22,16 +27,16 @@ const FACE_API_SCRIPT_SOURCES = [
 // trường không có COOP/COEP header. ORT tự động fallback về single-thread WASM.
 // Đây là warning thông tin, KHÔNG ảnh hưởng chức năng — ảnh vẫn được xử lý đúng.
 
-// FIX 3: Helper timeout — bọc bất kỳ Promise nào với race condition thời gian.
-// Nếu CDN / model tải quá chậm, reject với message rõ ràng thay vì spinner vô hạn.
-const AI_TIMEOUT_MS = 90_000;
-
+/**
+ * Bọc bất kỳ Promise nào với race condition thời gian.
+ * Nếu CDN / model tải quá chậm, reject với message rõ ràng
+ * thay vì spinner vô hạn.
+ */
 function withTimeout(promise, ms, message) {
   let timerId;
   const timer = new Promise((_, reject) => {
     timerId = setTimeout(() => reject(new Error(message)), ms);
   });
-  // Khi promise resolve/reject trước timeout → clear timer tránh leak
   return Promise.race([
     promise.then(
       (v) => { clearTimeout(timerId); return v; },
@@ -68,8 +73,19 @@ function loadScriptSequentially(urls) {
   return faceApiScriptPromise;
 }
 
+/**
+ * Khởi tạo module background removal.
+ * Idempotent: nếu đã load thành công trước đó, trả về true ngay lập tức
+ * mà không tải lại CDN. Điều này quan trọng khi người dùng bấm "🔄 AI"
+ * để retry — không cần lặp lại toàn bộ vòng CDN fallback.
+ */
 export async function warmupAi() {
-  // Không cần cấu hình ORT thủ công — imgly tự quản lý instance ORT của nó.
+  // Guard idempotent: đã có removeBackgroundFn từ lần load trước
+  if (removeBackgroundFn) {
+    state.aiReady = true;
+    state.aiError = '';
+    return true;
+  }
 
   const urls = [
     'https://esm.sh/@imgly/background-removal@1.5.5',
@@ -92,6 +108,7 @@ export async function warmupAi() {
       lastError = err instanceof Error ? err.message : `Không thể import AI từ ${url}`;
     }
   }
+
   state.aiReady = false;
   state.aiError = lastError || 'Không tải được module AI từ CDN';
   return false;
@@ -105,10 +122,7 @@ export async function loadFaceModels() {
     if (!faceApi) {
       // Chỉ dùng UMD để tránh nạp trùng backend TFJS từ ESM/CDN khác nhau.
       faceApi = await loadScriptSequentially(FACE_API_SCRIPT_SOURCES);
-
-      if (!faceApi) {
-        return false;
-      }
+      if (!faceApi) return false;
     }
 
     try {
@@ -136,7 +150,13 @@ export async function detectFace(canvas) {
   if (!ready || !faceApi) return null;
   try {
     const det = await faceApi
-      .detectSingleFace(canvas, new faceApi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.28 }))
+      .detectSingleFace(
+        canvas,
+        new faceApi.TinyFaceDetectorOptions({
+          inputSize:       FACE_DETECT_INPUT_SIZE,
+          scoreThreshold:  FACE_DETECT_THRESHOLD,
+        }),
+      )
       .withFaceLandmarks(true);
 
     if (!det) return null;
@@ -148,6 +168,7 @@ export async function detectFace(canvas) {
 
 export async function runBackgroundRemoval(file, progress) {
   if (!state.aiReady || !removeBackgroundFn) return null;
+
   const attempts = [
     { publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/', model: 'isnet_fp16' },
     { publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.5.5/dist/', model: 'isnet_fp16' },
@@ -158,32 +179,26 @@ export async function runBackgroundRemoval(file, progress) {
   let lastError = '';
   for (const attempt of attempts) {
     try {
-      // FIX 3: Bọc removeBackgroundFn với timeout 90 giây.
-      // Nếu CDN trả về chậm hoặc model download bị treo, spinner sẽ không
-      // bị kẹt vô hạn — caller nhận được null và rơi về flood fill.
       const blob = await withTimeout(
         removeBackgroundFn(file, {
-          publicPath: attempt.publicPath,
-          model: attempt.model,
-          device: 'cpu',
-          debug: false,
+          publicPath:    attempt.publicPath,
+          model:         attempt.model,
+          device:        'cpu',
+          debug:         false,
           proxyToWorker: false,
-          output: { format: 'image/png', quality: 1 },
+          output:        { format: 'image/png', quality: 1 },
           progress: (_key, current, total) => {
             if (typeof progress === 'function') progress(current, total);
           },
         }),
         AI_TIMEOUT_MS,
-        `AI timeout (90s) tại ${attempt.publicPath} — kiểm tra kết nối mạng`
+        `AI timeout (90s) tại ${attempt.publicPath} — kiểm tra kết nối mạng`,
       );
 
       const image = await new Promise((resolve, reject) => {
         const url = URL.createObjectURL(blob);
         const img = new Image();
-        img.onload = () => {
-          URL.revokeObjectURL(url);
-          resolve(img);
-        };
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
         img.onerror = reject;
         img.src = url;
       });
@@ -193,6 +208,7 @@ export async function runBackgroundRemoval(file, progress) {
       lastError = err instanceof Error ? err.message : `AI fail at ${attempt.publicPath}`;
     }
   }
+
   state.aiError = lastError || 'AI không thể tải model/background data';
   return null;
 }
