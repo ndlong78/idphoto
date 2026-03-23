@@ -20,9 +20,8 @@ const FACE_API_SCRIPT_SOURCES = [
 ];
 
 const BG_REMOVAL_MODULE_SOURCES = [
-  // Ưu tiên esm.sh bundle để tránh lỗi "Failed to resolve module specifier"
-  // khi CDN trả về ESM có bare imports (vd: "ndarray") không tương thích browser import trực tiếp.
-  'https://esm.sh/@imgly/background-removal@1.5.5?bundle',
+  // Chỉ dùng jsdelivr để khớp CSP hiện tại (script-src/connect-src).
+  // Tránh cố import esm.sh vì sẽ luôn bị CSP chặn và gây noisy error trên console.
   'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
 ];
 
