@@ -163,7 +163,8 @@ export function initUI(actions) {
     }, { signal });
   });
 
-  // Slider skin dùng debounce 120 ms vì boxBlurRGB nặng O(W·H·r).
+  // Slider skin dùng debounce 250 ms vì boxBlurRGB + getImageData/putImageData
+  // trên main thread có thể mất 60–90 ms (Chrome gắn cờ >50ms là violation).
   // Các slider còn lại (brightness, contrast, sharp, feather) render real-time.
   let skinDebounceTimer = 0;
 
@@ -173,7 +174,7 @@ export function initUI(actions) {
       document.getElementById(lblId).textContent = input.value;
       if (id === 'skin') {
         clearTimeout(skinDebounceTimer);
-        skinDebounceTimer = window.setTimeout(() => void renderToPreview(), 120);
+        skinDebounceTimer = window.setTimeout(() => void renderToPreview(), 250);
       } else {
         void renderToPreview();
       }
