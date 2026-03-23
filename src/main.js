@@ -2,6 +2,7 @@ import { detectFace, loadFaceModels, runBackgroundRemoval, warmupAi } from './ai
 import { nextStep, STEPS } from './pipeline.js';
 import { renderToPreview } from './render.js';
 import { state, validateImageFile } from './state.js';
+import { logEvent, setTelemetryContext } from './telemetry.js';
 import {
   copyToClipboard,
   download,
@@ -40,13 +41,6 @@ async function withTimeoutFallback(promise, timeoutMs, fallbackValue) {
 
 /**
  * Đọc file ảnh từ thiết bị thành HTMLImageElement.
- *
- * FIX: Phiên bản cũ trả về thông báo lỗi generic cho mọi img.onerror.
- * HEIC/HEIF silent fail trên Chrome/Firefox (browser không decode natively)
- * khiến user không hiểu nguyên nhân lỗi.
- *
- * Fix: detect định dạng HEIC/HEIF qua tên file và mime type,
- * trả về thông báo hướng dẫn cụ thể thay vì "Hãy thử đổi ảnh sang JPG".
  */
 function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
@@ -70,15 +64,14 @@ function loadImageFromFile(file) {
 }
 
 async function processFile(file) {
+  const pipelineStartedAt = performance.now();
   setSection('loading');
   setProgress(5);
   setLoadStep(1, 'active');
   setLoad('Đang tải thư viện...', '');
 
-  pipelineStep = nextStep(pipelineStep);  // idle → loading_libs
+  pipelineStep = nextStep(pipelineStep);
 
-  // warmupAi/loadFaceModels phụ thuộc mạng CDN, có thể treo request ở một số
-  // mạng công ty/vpn/proxy. Dùng timeout để luôn thoát khỏi bước loading.
   const [aiReadyRaw, faceReadyRaw] = await Promise.all([
     withTimeoutFallback(warmupAi(), 25_000, false),
     withTimeoutFallback(loadFaceModels(), 15_000, false),
@@ -95,7 +88,7 @@ async function processFile(file) {
 
   setLoadStep(2, 'active');
   setLoad('Nhận dạng khuôn mặt...', '');
-  pipelineStep = nextStep(pipelineStep);  // loading_libs → detect_face
+  pipelineStep = nextStep(pipelineStep);
   try {
     state.faceData = faceReady ? await detectFace(oc) : null;
   } catch {
@@ -106,7 +99,7 @@ async function processFile(file) {
 
   setLoadStep(3, 'active');
   setLoad('AI đang tách nền...', 'Lần đầu có thể mất 20–40 giây để tải model');
-  pipelineStep = nextStep(pipelineStep);  // detect_face → remove_bg
+  pipelineStep = nextStep(pipelineStep);
   try {
     state.aiMaskImg = aiReady
       ? await runBackgroundRemoval(file, (current, total) => {
@@ -120,7 +113,7 @@ async function processFile(file) {
 
   setLoadStep(4, 'active');
   setLoad('Hoàn thiện...', '');
-  pipelineStep = nextStep(pipelineStep);  // remove_bg → render_done
+  pipelineStep = nextStep(pipelineStep);
   mountEditor();
   await renderToPreview();
   setLoadStep(4, 'done');
@@ -129,6 +122,19 @@ async function processFile(file) {
 
   setFaceStatus(state.faceData?.score ?? null);
   setAiInfoBar(Boolean(state.aiMaskImg), state.aiError);
+
+  logEvent('pipeline.completed', {
+    fileName: file.name,
+    fileSize: file.size,
+    format: state.curFmt,
+    aiReady,
+    faceReady,
+    hasFace: Boolean(state.faceData),
+    hasAiMask: Boolean(state.aiMaskImg),
+    aiError: state.aiError || null,
+    durationMs: Math.round(performance.now() - pipelineStartedAt),
+  });
+
   if (!faceReady && !aiReady) {
     toast('✅ Đã vào trình chỉnh sửa (thiếu AI do mạng/trình duyệt)', 'ok');
   } else {
@@ -142,9 +148,9 @@ async function reprocessAI() {
     return;
   }
 
+  const startedAt = performance.now();
   if (!state.aiReady) {
     setLoad('Đang tải AI...', 'Đang thử lại mô-đun tách nền');
-    // warmupAi idempotent: nếu đã load rồi, trả về true ngay
     const aiReady = await warmupAi();
     if (!aiReady) {
       toast('⚠️ Chưa tải được AI. Vui lòng kiểm tra mạng và thử lại.', 'err');
@@ -159,9 +165,21 @@ async function reprocessAI() {
   }
   setAiInfoBar(Boolean(state.aiMaskImg), state.aiError);
   await renderToPreview();
+
+  logEvent('pipeline.reprocess_ai', {
+    fileName: state.origFile?.name ?? null,
+    success: Boolean(state.aiMaskImg),
+    aiError: state.aiError || null,
+    durationMs: Math.round(performance.now() - startedAt),
+  });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  setTelemetryContext({
+    page: 'main',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+
   const openFilePicker = () => {
     const input = document.getElementById('file-input');
     if (!(input instanceof HTMLInputElement)) return;
@@ -175,10 +193,8 @@ document.addEventListener('DOMContentLoaded', () => {
       await download(mode);
       setSteps(4);
       toast('✅ Đã tải ảnh thành công', 'ok');
+      logEvent('asset.download', { mode, format: state.curFmt });
     },
-    // FIX: copyToClipboard() giờ trả về { method: 'clipboard' | 'newtab' }
-    // thay vì throw khi browser không hỗ trợ ClipboardItem API.
-    // Toast message thay đổi theo method để user biết chuyện gì đã xảy ra.
     onCopy: async () => {
       const result = await copyToClipboard();
       if (result.method === 'clipboard') {
@@ -186,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         toast('🖼️ Trình duyệt không hỗ trợ sao chép — đã mở ảnh trong tab mới.', 'ok');
       }
+      logEvent('asset.copy', { method: result.method });
     },
     onFileDrop:  (file) => void handleFile(file),
     onFileInput: (file) => void handleFile(file),
@@ -201,6 +218,12 @@ async function handleFile(file) {
   const validation = validateImageFile(file);
   if (!validation.ok) {
     toast(validation.error, 'err');
+    logEvent('upload.validation_failed', {
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type,
+      error: validation.error,
+    }, 'error');
     return;
   }
 
@@ -214,6 +237,12 @@ async function handleFile(file) {
     const msg = err instanceof Error ? err.message : 'Upload thất bại. Vui lòng thử lại.';
     toast(msg, 'err');
     setSection('upload');
+    logEvent('pipeline.failed', {
+      fileName: file.name,
+      fileSize: file.size,
+      mimeType: file.type,
+      error: msg,
+    }, 'error');
   } finally {
     isProcessing = false;
   }
