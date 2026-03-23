@@ -1,6 +1,12 @@
 import { FMTS, state } from './state.js';
 import { renderToPreview } from './render.js';
 import { syncZoomUI } from './ui.js';
+import {
+  CROP_FIT_MARGIN,
+  CROP_FIT_MAX_SCALE,
+  CROP_FACE_SCALE_FACTOR,
+  CROP_FACE_VERTICAL_BIAS,
+} from './constants.js';
 
 let cropController = null;
 let animId = null;
@@ -17,14 +23,14 @@ export function initCrop() {
   cropController = new AbortController();
   const { signal } = cropController;
 
-  const dpr = window.devicePixelRatio || 1;
-  const panel = canvas.closest('.panel-card');
-  const cw = panel?.clientWidth ?? 500;
-  const ch = Math.round(Math.min(Math.max(cw * 0.85, 340), 520));
+  const dpr    = window.devicePixelRatio || 1;
+  const panel  = canvas.closest('.panel-card');
+  const cw     = panel?.clientWidth ?? 500;
+  const ch     = Math.round(Math.min(Math.max(cw * 0.85, 340), 520));
 
-  canvas.style.width = `${cw}px`;
+  canvas.style.width  = `${cw}px`;
   canvas.style.height = `${ch}px`;
-  canvas.width = Math.round(cw * dpr);
+  canvas.width  = Math.round(cw * dpr);
   canvas.height = Math.round(ch * dpr);
   state.cW = cw;
   state.cH = ch;
@@ -61,9 +67,6 @@ export function initCrop() {
   }, { passive: false, signal });
 
   canvas.addEventListener('touchstart', (e) => {
-    // Chỉ preventDefault khi event còn cancelable — browser đôi khi đánh dấu
-    // touchstart là non-cancelable khi scroll đang chạy, gọi preventDefault
-    // lúc đó gây "[Intervention] Ignored attempt to cancel" warning.
     if (e.cancelable) e.preventDefault();
     if (e.touches.length === 1) {
       dragging = true;
@@ -136,22 +139,43 @@ export function computeFrame() {
   state.frame = { x: (state.cW - fw) / 2, y: (state.cH - fh) / 2, w: fw, h: fh };
 }
 
+/**
+ * Fit ảnh gốc vào canvas crop.
+ *
+ * Clamp scale về [eps, CROP_FIT_MAX_SCALE]:
+ *   - eps tránh scale = 0 gây division-by-zero trong getCropRect
+ *   - CROP_FIT_MAX_SCALE ngăn ảnh thumbnail (50×50) bị zoom cực kỳ lớn
+ *     khi fit vào canvas 500px, làm mất kiểm soát crop
+ *
+ * @param {boolean} rerender - true để trigger renderToPreview ngay sau
+ */
 export function fitImage(rerender) {
   if (!state.origImg) return;
-  state.crop.scale = Math.min(state.cW / state.origImg.width, state.cH / state.origImg.height) * 0.94;
-  state.crop.x = (state.cW - state.origImg.width * state.crop.scale) / 2;
+
+  const rawScale = Math.min(
+    state.cW / state.origImg.width,
+    state.cH / state.origImg.height,
+  ) * CROP_FIT_MARGIN;
+
+  state.crop.scale = Math.max(1e-6, Math.min(CROP_FIT_MAX_SCALE, rawScale));
+  state.crop.x = (state.cW - state.origImg.width  * state.crop.scale) / 2;
   state.crop.y = (state.cH - state.origImg.height * state.crop.scale) / 2;
   needDraw = true;
   syncZoomUI();
   if (rerender) void renderToPreview();
 }
 
+/**
+ * Tự động căn chỉnh frame để khuôn mặt nằm đúng vị trí chuẩn hộ chiếu:
+ *   - Mặt chiếm CROP_FACE_SCALE_FACTOR (65%) chiều cao frame
+ *   - Tâm mặt nằm ở CROP_FACE_VERTICAL_BIAS (37%) từ trên frame
+ */
 export function centerFace() {
   if (!state.faceData) return;
   const b = state.faceData.box;
-  state.crop.scale = (state.frame.h * 0.65) / b.height;
+  state.crop.scale = (state.frame.h * CROP_FACE_SCALE_FACTOR) / b.height;
   state.crop.x = state.frame.x + state.frame.w / 2 - (b.x + b.width / 2) * state.crop.scale;
-  state.crop.y = state.frame.y + state.frame.h * 0.37 - (b.y + b.height / 2) * state.crop.scale;
+  state.crop.y = state.frame.y + state.frame.h * CROP_FACE_VERTICAL_BIAS - (b.y + b.height / 2) * state.crop.scale;
   needDraw = true;
   syncZoomUI();
 }
@@ -174,27 +198,13 @@ function drawCrop() {
 
   const dpr = window.devicePixelRatio || 1;
 
-  // FIX: Dùng setTransform() thay vì save/scale/restore.
-  //
-  // Vấn đề với save/scale/restore: nếu ctx.restore() không khôi phục đúng
-  // trạng thái (xảy ra khi canvas nằm trong overflow:hidden flex container,
-  // hoặc khi rAF callback bị interrupt), transform sẽ tích lũy thành
-  // dpr², dpr³... qua mỗi lần vẽ. clearRect(0, 0, cW, cH) lúc đó chỉ
-  // xóa một phần nhỏ canvas — phần còn lại giữ nguyên ảnh cũ, tạo
-  // hiệu ứng "deck of cards" mỗi lần nhấn nút Khuôn mặt / Khớp.
-  //
-  // setTransform() không phụ thuộc vào stack state — luôn set trực tiếp
-  // về giá trị mong muốn bất kể trạng thái trước đó là gì.
-  // clearRect dùng canvas.width/height (physical px) thay vì state.cW/cH
-  // để đảm bảo xóa TOÀN BỘ canvas ngay cả khi state bị stale.
-
-  // 1. Reset transform về identity, xóa canvas bằng kích thước vật lý
+  // Dùng setTransform() thay vì save/scale/restore để tránh tích lũy transform
+  // qua nhiều frame (gây hiệu ứng "deck of cards" khi state bị stale).
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // 2. Đặt DPR scale để vẽ trong không gian CSS pixel
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+  // Checker background
   const ts = 11;
   for (let y = 0; y < state.cH; y += ts) {
     for (let x = 0; x < state.cW; x += ts) {
@@ -214,7 +224,6 @@ function drawCrop() {
   ctx.fillRect(x + w, y, state.cW - x - w, h);
   ctx.strokeStyle = 'rgba(212,175,80,.6)';
   ctx.strokeRect(x, y, w, h);
-  // Không cần ctx.restore() — setTransform() quản lý trực tiếp, không dùng stack
 }
 
 function distance(a, b) {
