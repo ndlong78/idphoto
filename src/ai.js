@@ -22,6 +22,25 @@ const FACE_API_SCRIPT_SOURCES = [
 // trường không có COOP/COEP header. ORT tự động fallback về single-thread WASM.
 // Đây là warning thông tin, KHÔNG ảnh hưởng chức năng — ảnh vẫn được xử lý đúng.
 
+// FIX 3: Helper timeout — bọc bất kỳ Promise nào với race condition thời gian.
+// Nếu CDN / model tải quá chậm, reject với message rõ ràng thay vì spinner vô hạn.
+const AI_TIMEOUT_MS = 90_000;
+
+function withTimeout(promise, ms, message) {
+  let timerId;
+  const timer = new Promise((_, reject) => {
+    timerId = setTimeout(() => reject(new Error(message)), ms);
+  });
+  // Khi promise resolve/reject trước timeout → clear timer tránh leak
+  return Promise.race([
+    promise.then(
+      (v) => { clearTimeout(timerId); return v; },
+      (e) => { clearTimeout(timerId); return Promise.reject(e); },
+    ),
+    timer,
+  ]);
+}
+
 function loadScriptSequentially(urls) {
   if (faceApiScriptPromise) return faceApiScriptPromise;
 
@@ -139,17 +158,24 @@ export async function runBackgroundRemoval(file, progress) {
   let lastError = '';
   for (const attempt of attempts) {
     try {
-      const blob = await removeBackgroundFn(file, {
-        publicPath: attempt.publicPath,
-        model: attempt.model,
-        device: 'cpu',
-        debug: false,
-        proxyToWorker: false,
-        output: { format: 'image/png', quality: 1 },
-        progress: (_key, current, total) => {
-          if (typeof progress === 'function') progress(current, total);
-        },
-      });
+      // FIX 3: Bọc removeBackgroundFn với timeout 90 giây.
+      // Nếu CDN trả về chậm hoặc model download bị treo, spinner sẽ không
+      // bị kẹt vô hạn — caller nhận được null và rơi về flood fill.
+      const blob = await withTimeout(
+        removeBackgroundFn(file, {
+          publicPath: attempt.publicPath,
+          model: attempt.model,
+          device: 'cpu',
+          debug: false,
+          proxyToWorker: false,
+          output: { format: 'image/png', quality: 1 },
+          progress: (_key, current, total) => {
+            if (typeof progress === 'function') progress(current, total);
+          },
+        }),
+        AI_TIMEOUT_MS,
+        `AI timeout (90s) tại ${attempt.publicPath} — kiểm tra kết nối mạng`
+      );
 
       const image = await new Promise((resolve, reject) => {
         const url = URL.createObjectURL(blob);
