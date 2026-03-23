@@ -24,15 +24,28 @@ export async function renderResult(scale = 1) {
       mctx.drawImage(state.aiMaskImg, crop.x, crop.y, crop.w, crop.h, 0, 0, out.width, out.height);
       const maskData = mctx.getImageData(0, 0, out.width, out.height);
 
-      // FIX 2: Feather áp dụng lên alpha channel của AI mask.
-      // Trước đây slider "Mịn viền" chỉ có tác dụng ở chế độ flood fill,
-      // gây nhầm lẫn vì người dùng thấy slider nhưng không thấy kết quả.
+      // FIX 2 (v2): Feather áp dụng lên alpha channel của AI mask.
+      //
+      // ISNet output là smooth alpha (0–255), không phải binary (0/255).
+      // featherMask() chỉ hoạt động đúng với binary mask — nếu truyền thẳng
+      // smooth alpha vào, các pixel bán trong suốt (tóc mịn, alpha=50) bị
+      // coi là foreground và distance transform sẽ boost chúng lên 255,
+      // gây vệt xám trắng trên vùng tóc.
+      //
+      // Giải pháp: tạo binary mask riêng để chạy distance transform,
+      // sau đó NHÂN (không thay thế) alpha gốc ISNet với hệ số feather.
+      // Pixel tóc alpha=50 × hệ số 0.8 = 40 — smooth edge được giữ nguyên.
       const featherRadius = getControls().feather.valueAsNumber;
       if (featherRadius > 0) {
-        const alpha = new Uint8Array(out.width * out.height);
-        for (let i = 0; i < alpha.length; i++) alpha[i] = maskData.data[i * 4 + 3];
-        featherMask(alpha, out.width, out.height, featherRadius);
-        for (let i = 0; i < alpha.length; i++) maskData.data[i * 4 + 3] = alpha[i];
+        const binaryMask = new Uint8Array(out.width * out.height);
+        for (let i = 0; i < binaryMask.length; i++) {
+          binaryMask[i] = maskData.data[i * 4 + 3] > 0 ? 255 : 0;
+        }
+        featherMask(binaryMask, out.width, out.height, featherRadius);
+        for (let i = 0; i < binaryMask.length; i++) {
+          const original = maskData.data[i * 4 + 3];
+          maskData.data[i * 4 + 3] = Math.round(original * binaryMask[i] / 255);
+        }
       }
 
       blendWithMask(imageData.data, maskData.data, bg);
