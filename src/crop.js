@@ -173,9 +173,27 @@ function drawCrop() {
   if (!ctx || !state.origImg) return;
 
   const dpr = window.devicePixelRatio || 1;
-  ctx.save();
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, state.cW, state.cH);
+
+  // FIX: Dùng setTransform() thay vì save/scale/restore.
+  //
+  // Vấn đề với save/scale/restore: nếu ctx.restore() không khôi phục đúng
+  // trạng thái (xảy ra khi canvas nằm trong overflow:hidden flex container,
+  // hoặc khi rAF callback bị interrupt), transform sẽ tích lũy thành
+  // dpr², dpr³... qua mỗi lần vẽ. clearRect(0, 0, cW, cH) lúc đó chỉ
+  // xóa một phần nhỏ canvas — phần còn lại giữ nguyên ảnh cũ, tạo
+  // hiệu ứng "deck of cards" mỗi lần nhấn nút Khuôn mặt / Khớp.
+  //
+  // setTransform() không phụ thuộc vào stack state — luôn set trực tiếp
+  // về giá trị mong muốn bất kể trạng thái trước đó là gì.
+  // clearRect dùng canvas.width/height (physical px) thay vì state.cW/cH
+  // để đảm bảo xóa TOÀN BỘ canvas ngay cả khi state bị stale.
+
+  // 1. Reset transform về identity, xóa canvas bằng kích thước vật lý
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 2. Đặt DPR scale để vẽ trong không gian CSS pixel
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   const ts = 11;
   for (let y = 0; y < state.cH; y += ts) {
@@ -196,7 +214,7 @@ function drawCrop() {
   ctx.fillRect(x + w, y, state.cW - x - w, h);
   ctx.strokeStyle = 'rgba(212,175,80,.6)';
   ctx.strokeRect(x, y, w, h);
-  ctx.restore();
+  // Không cần ctx.restore() — setTransform() quản lý trực tiếp, không dùng stack
 }
 
 function distance(a, b) {
