@@ -1,46 +1,54 @@
 export const FMTS = {
   'passport-vn': { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
-  cccd: { w: 354, h: 472, lbl: '30 × 40 mm', dpi: 300 },
-  'us-visa': { w: 600, h: 600, lbl: '51 × 51 mm', dpi: 300 },
-  schengen: { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
-  'uk-visa': { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
-  japan: { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
+  cccd:          { w: 354, h: 472, lbl: '30 × 40 mm', dpi: 300 },
+  'us-visa':     { w: 600, h: 600, lbl: '51 × 51 mm', dpi: 300 },
+  schengen:      { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
+  'uk-visa':     { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
+  japan:         { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
 };
 
 export const state = {
-  origImg: null,
-  origFile: null,
+  origImg:   null,
+  origFile:  null,
   aiMaskImg: null,
-  faceData: null,
-  bgColor: { r: 255, g: 255, b: 255 },
-  curFmt: 'passport-vn',
-  aiReady: false,
-  aiError: '',
+  faceData:  null,
+  bgColor:   { r: 255, g: 255, b: 255 },
+  curFmt:    'passport-vn',
+  aiReady:   false,
+  aiError:   '',
   cW: 0,
   cH: 0,
   frame: { x: 0, y: 0, w: 0, h: 0 },
-  crop: { x: 0, y: 0, scale: 1 },
-  rv: { scale: 1, tx: 0, ty: 0 },
-  lb: { scale: 1, tx: 0, ty: 0 },
+  crop:  { x: 0, y: 0, scale: 1 },
+  rv:    { scale: 1, tx: 0, ty: 0 },
+  lb:    { scale: 1, tx: 0, ty: 0 },
   section: 'upload',
 };
 
 export function resetState() {
-  state.origImg = null;
-  state.origFile = null;
+  state.origImg   = null;
+  state.origFile  = null;
   state.aiMaskImg = null;
-  state.faceData = null;
-  state.aiError = '';
-  state.bgColor = { r: 255, g: 255, b: 255 };
-  state.curFmt = 'passport-vn';
-  state.rv = { scale: 1, tx: 0, ty: 0 };
-  state.lb = { scale: 1, tx: 0, ty: 0 };
+  state.faceData  = null;
+  state.aiError   = '';
+  state.bgColor   = { r: 255, g: 255, b: 255 };
+  state.curFmt    = 'passport-vn';
+  state.rv        = { scale: 1, tx: 0, ty: 0 };
+  state.lb        = { scale: 1, tx: 0, ty: 0 };
+
+  // Intentional: state.aiReady KHÔNG được reset.
+  // AI module (ai.js) giữ nguyên removeBackgroundFn đã import và face model
+  // đã load. Reset sang false sẽ khiến lần xử lý tiếp theo tốn thêm ~30s
+  // tải lại model không cần thiết.
+  // Xem thêm: warmupAi() trong ai.js — guard idempotent.
 }
 
 export function validateImageFile(file) {
   const hasImageMime = file.type.startsWith('image/');
-  const hasImageExt = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
-  if (!hasImageMime && !hasImageExt) return { ok: false, error: 'Vui lòng chọn file ảnh (JPG/PNG/WEBP/HEIC)!' };
-  if (file.size > 15 * 1024 * 1024) return { ok: false, error: 'File quá lớn (tối đa 15MB)' };
+  const hasImageExt  = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
+  if (!hasImageMime && !hasImageExt)
+    return { ok: false, error: 'Vui lòng chọn file ảnh (JPG/PNG/WEBP/HEIC)!' };
+  if (file.size > 15 * 1024 * 1024)
+    return { ok: false, error: 'File quá lớn (tối đa 15MB)' };
   return { ok: true };
 }
