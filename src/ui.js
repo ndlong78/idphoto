@@ -55,6 +55,75 @@ export function initUI(actions) {
   bindClick('btn-result-plus', () => zoomResult(1), signal);
   bindClick('btn-result-fit', () => zoomResultFit(), signal);
 
+  // Scroll zoom và drag cho result panel — phản ánh đúng hint "Cuộn để zoom · Kéo để di chuyển"
+  const prevWrap = document.getElementById('prev-wrap');
+
+  prevWrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomResult(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false, signal });
+
+  let rvDragging = false;
+  let rvLast = { x: 0, y: 0 };
+
+  prevWrap.addEventListener('mousedown', (e) => {
+    rvDragging = true;
+    rvLast = { x: e.clientX, y: e.clientY };
+    e.preventDefault();
+  }, { signal });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!rvDragging) return;
+    state.rv.tx += e.clientX - rvLast.x;
+    state.rv.ty += e.clientY - rvLast.y;
+    rvLast = { x: e.clientX, y: e.clientY };
+    applyResultTransform();
+  }, { signal });
+
+  window.addEventListener('mouseup', () => { rvDragging = false; }, { signal });
+
+  // Touch pinch-to-zoom và drag cho result panel
+  let rvTouchLast = { x: 0, y: 0 };
+  let rvPinchLast = 0;
+
+  prevWrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      rvDragging = true;
+      rvTouchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      rvDragging = false;
+      rvPinchLast = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+    }
+  }, { passive: true, signal });
+
+  prevWrap.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && rvDragging) {
+      state.rv.tx += e.touches[0].clientX - rvTouchLast.x;
+      state.rv.ty += e.touches[0].clientY - rvTouchLast.y;
+      rvTouchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      applyResultTransform();
+    } else if (e.touches.length === 2 && rvPinchLast > 0) {
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      const factor = d / rvPinchLast;
+      const next = Math.max(0.25, Math.min(8, state.rv.scale * factor));
+      const sf = next / state.rv.scale;
+      state.rv.tx *= sf;
+      state.rv.ty *= sf;
+      state.rv.scale = next;
+      rvPinchLast = d;
+      applyResultTransform();
+    }
+  }, { passive: false, signal });
+
+  prevWrap.addEventListener('touchend', () => { rvDragging = false; rvPinchLast = 0; }, { signal });
+
   bindClick('btn-open-lightbox', () => openLightbox(), signal);
   bindClick('btn-lb-close', () => closeLightbox(), signal);
   bindClick('btn-lb-minus', () => lightboxZoom(-1), signal);
@@ -94,12 +163,20 @@ export function initUI(actions) {
     }, { signal });
   });
 
+  // Slider skin dùng debounce 120 ms vì boxBlurRGB nặng O(W·H·r).
+  // Các slider còn lại (brightness, contrast, sharp, feather) render real-time.
+  let skinDebounceTimer = 0;
+
   [['bright', 'bv'], ['contrast', 'cv'], ['sharp', 'sv'], ['skin', 'skv'], ['feather', 'fv']].forEach(([id, lblId]) => {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
-      const lbl = document.getElementById(lblId);
-      lbl.textContent = input.value;
-      void renderToPreview();
+      document.getElementById(lblId).textContent = input.value;
+      if (id === 'skin') {
+        clearTimeout(skinDebounceTimer);
+        skinDebounceTimer = window.setTimeout(() => void renderToPreview(), 120);
+      } else {
+        void renderToPreview();
+      }
     }, { signal });
   });
 
@@ -329,5 +406,7 @@ export async function copyToClipboard() {
 export function mountEditor() {
   setSection('editor');
   initCrop();
-  void renderToPreview();
+  // Không gọi renderToPreview() ở đây — caller (processFile) sẽ await
+  // một lần duy nhất sau khi mountEditor() trả về, tránh hai render
+  // chạy song song do void fire-and-forget + await.
 }
