@@ -2,6 +2,7 @@ import { logEvent } from './telemetry.js';
 
 const ALLOWED_ORIGINS = new Set([
   'https://cdn.jsdelivr.net',
+  'https://esm.sh',
   'https://staticimgly.com',
 ]);
 
