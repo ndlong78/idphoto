@@ -46,6 +46,17 @@ function withTimeout(promise, ms, message) {
   ]);
 }
 
+/**
+ * Tải face-api.js script tuần tự qua danh sách CDN fallback.
+ *
+ * FIX: Phiên bản cũ cache promise ngay cả khi tất cả CDN thất bại (trả về null).
+ * Promise object luôn truthy → lần gọi tiếp theo trả về null ngay lập tức
+ * mà không thử lại CDN, buộc user phải reload trang để retry face detection.
+ *
+ * Fix: reset faceApiScriptPromise = null trong .then() callback khi result = null,
+ * đảm bảo lần gọi tiếp theo (ví dụ sau khi mạng hồi phục) sẽ thử lại CDN.
+ * Kỹ thuật tương tự cách loadFaceModels() reset faceModelLoadPromise trong finally.
+ */
 function loadScriptSequentially(urls) {
   if (faceApiScriptPromise) return faceApiScriptPromise;
 
@@ -70,7 +81,13 @@ function loadScriptSequentially(urls) {
     return null;
   })();
 
-  return faceApiScriptPromise;
+  // Reset promise nếu tất cả CDN thất bại → cho phép retry mà không cần reload trang.
+  // Nếu không reset, faceApiScriptPromise giữ nguyên Promise<null> đã resolved —
+  // truthy với guard trên nên mọi lần gọi sau đều trả về null ngay lập tức.
+  return faceApiScriptPromise.then(
+    (result) => { if (!result) faceApiScriptPromise = null; return result; },
+    (err)    => { faceApiScriptPromise = null; return Promise.reject(err); },
+  );
 }
 
 /**
