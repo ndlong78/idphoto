@@ -1,5 +1,5 @@
 import { detectFace, loadFaceModels, runBackgroundRemoval, warmupAi } from './ai.js';
-import { nextStep } from './pipeline.js';
+import { nextStep, STEPS } from './pipeline.js';
 import { renderToPreview } from './render.js';
 import { state, validateImageFile } from './state.js';
 import {
@@ -17,7 +17,7 @@ import {
   toast,
 } from './ui.js';
 
-let pipelineStep = 'idle';
+let pipelineStep = STEPS.IDLE;
 let isProcessing = false;
 
 function loadImageFromFile(file) {
@@ -25,7 +25,7 @@ function loadImageFromFile(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
-      img.onload = () => resolve(img);
+      img.onload  = () => resolve(img);
       img.onerror = () => reject(new Error('Không đọc được ảnh từ thiết bị. Hãy thử đổi ảnh sang JPG hoặc PNG.'));
       img.src = String(e.target?.result ?? '');
     };
@@ -40,22 +40,22 @@ async function processFile(file) {
   setLoadStep(1, 'active');
   setLoad('Đang tải thư viện...', '');
 
-  pipelineStep = nextStep(pipelineStep);
+  pipelineStep = nextStep(pipelineStep);  // idle → loading_libs
 
-  // FIX 1: warmupAi và loadFaceModels độc lập nhau — chạy song song
-  // giảm thời gian khởi động ~1-3 giây so với chạy tuần tự.
+  // warmupAi và loadFaceModels độc lập nhau — chạy song song
+  // giảm thời gian khởi động ~1–3 giây so với chạy tuần tự.
   const [aiReady, faceReady] = await Promise.all([warmupAi(), loadFaceModels()]);
   setLoadStep(1, 'done');
   setProgress(20);
 
   const oc = document.getElementById('orig-canvas');
-  oc.width = state.origImg.width;
+  oc.width  = state.origImg.width;
   oc.height = state.origImg.height;
   oc.getContext('2d')?.drawImage(state.origImg, 0, 0);
 
   setLoadStep(2, 'active');
   setLoad('Nhận dạng khuôn mặt...', '');
-  pipelineStep = nextStep(pipelineStep);
+  pipelineStep = nextStep(pipelineStep);  // loading_libs → detect_face
   try {
     state.faceData = faceReady ? await detectFace(oc) : null;
   } catch {
@@ -66,12 +66,12 @@ async function processFile(file) {
 
   setLoadStep(3, 'active');
   setLoad('AI đang tách nền...', 'Lần đầu có thể mất 20–40 giây để tải model');
-  pipelineStep = nextStep(pipelineStep);
+  pipelineStep = nextStep(pipelineStep);  // detect_face → remove_bg
   try {
     state.aiMaskImg = aiReady
       ? await runBackgroundRemoval(file, (current, total) => {
-        if (total > 0) setProgress(35 + Math.round((current / total) * 50));
-      })
+          if (total > 0) setProgress(35 + Math.round((current / total) * 50));
+        })
       : null;
   } catch {
     state.aiMaskImg = null;
@@ -80,9 +80,7 @@ async function processFile(file) {
 
   setLoadStep(4, 'active');
   setLoad('Hoàn thiện...', '');
-  pipelineStep = nextStep(pipelineStep);
-  // mountEditor() đã gọi initCrop() bên trong — không gọi lại để tránh
-  // đăng ký event listener trùng và tạo rAF loop thứ hai.
+  pipelineStep = nextStep(pipelineStep);  // remove_bg → render_done
   mountEditor();
   await renderToPreview();
   setLoadStep(4, 'done');
@@ -106,6 +104,7 @@ async function reprocessAI() {
 
   if (!state.aiReady) {
     setLoad('Đang tải AI...', 'Đang thử lại mô-đun tách nền');
+    // warmupAi idempotent: nếu đã load rồi, trả về true ngay
     const aiReady = await warmupAi();
     if (!aiReady) {
       toast('⚠️ Chưa tải được AI. Vui lòng kiểm tra mạng và thử lại.', 'err');
@@ -126,13 +125,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const openFilePicker = () => {
     const input = document.getElementById('file-input');
     if (!(input instanceof HTMLInputElement)) return;
-
-    // showPicker yêu cầu user gesture rất chặt; click() ổn định hơn giữa các trình duyệt
     input.click();
   };
 
   initUI({
-    onPickFile: openFilePicker,
+    onPickFile:    openFilePicker,
     onReprocessAI: reprocessAI,
     onDownload: async (mode) => {
       await download(mode);
@@ -143,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await copyToClipboard();
       toast('📋 Đã sao chép!', 'ok');
     },
-    onFileDrop: (file) => void handleFile(file),
+    onFileDrop:  (file) => void handleFile(file),
     onFileInput: (file) => void handleFile(file),
   });
 });
@@ -161,9 +158,10 @@ async function handleFile(file) {
   }
 
   try {
-    isProcessing = true;
+    isProcessing   = true;
+    pipelineStep   = STEPS.IDLE;
     state.origFile = file;
-    state.origImg = await loadImageFromFile(file);
+    state.origImg  = await loadImageFromFile(file);
     await processFile(file);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Upload thất bại. Vui lòng thử lại.';
