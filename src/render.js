@@ -64,21 +64,26 @@ function blendWithMask(data, mask, bg) {
 }
 
 function applyAdjustments(imageData) {
-  const { bright, contrast, sharp } = getControls();
+  const { bright, contrast, sharp, skin } = getControls();
   const b = bright.valueAsNumber;
   const c = contrast.valueAsNumber;
   const s = sharp.valueAsNumber / 100;
+  const sk = skin.valueAsNumber;
   const d = imageData.data;
 
+  // 1. Brightness & contrast
   const factor = (259 * (c + 255)) / (255 * (259 - c));
   for (let i = 0; i < d.length; i += 4) {
-    d[i] = clamp(factor * (d[i] - 128) + 128 + b);
+    d[i]     = clamp(factor * (d[i]     - 128) + 128 + b);
     d[i + 1] = clamp(factor * (d[i + 1] - 128) + 128 + b);
     d[i + 2] = clamp(factor * (d[i + 2] - 128) + 128 + b);
   }
 
-  if (s <= 0) return;
-  unsharpMask(imageData, 1.2, s * 1.2);
+  // 2. Skin smoothing (frequency separation — chạy trước sharpening)
+  if (sk > 0) applySkinSmoothing(imageData, sk);
+
+  // 3. Unsharp mask (tăng nét sau khi làm mịn)
+  if (s > 0) unsharpMask(imageData, 1.2, s * 1.2);
 }
 
 function unsharpMask(imageData, radius, amount) {
@@ -187,6 +192,88 @@ function sampleBackground(data, W, H) {
 function colorDistance(a, b) {
   return Math.sqrt((a.r - b.r) ** 2 * 0.299 + (a.g - b.g) ** 2 * 0.587 + (a.b - b.b) ** 2 * 0.114);
 }
+
+// ─── Skin Smoothing (Frequency Separation) ──────────────────────────────────
+//
+// Chiến lược:
+//   1. Tạo lớp low-frequency (box blur) của toàn ảnh.
+//   2. Với mỗi pixel được nhận diện là da, blend pixel gốc với lớp blurred.
+//      Điều này làm phẳng màu sắc (low-freq) nhưng vẫn giữ lại một phần
+//      kết cấu da (high-freq = gốc − blurred không bị xóa hoàn toàn).
+//   3. Sharpening chạy SAU để phục hồi cạnh mắt, tóc, môi.
+//
+// Skin detection từ chối:
+//   - Nền trắng / xám (r ≈ g ≈ b)
+//   - Tóc tối (r < 60)
+//   - Mắt tối (r < 60)
+//   - Môi đỏ bão hòa cao (r − g > 80 khi r > 200)
+//   - Vùng lạnh / xanh (b > g)
+
+function applySkinSmoothing(imageData, amount) {
+  if (amount <= 0) return;
+  const { width, height, data } = imageData;
+  const strength = amount / 100;
+  // Bán kính blur tỷ lệ với cường độ: ~2px ở 10%, ~8px ở 100%
+  const radius = Math.max(2, Math.round(strength * 8));
+  const lowFreq = boxBlurRGB(data, width, height, radius);
+
+  for (let i = 0; i < data.length; i += 4) {
+    if (!isSkinPixel(data[i], data[i + 1], data[i + 2])) continue;
+    // Blend tối đa 88% để không xóa hoàn toàn micro-texture
+    const t = strength * 0.88;
+    data[i]     = clamp(data[i]     * (1 - t) + lowFreq[i]     * t);
+    data[i + 1] = clamp(data[i + 1] * (1 - t) + lowFreq[i + 1] * t);
+    data[i + 2] = clamp(data[i + 2] * (1 - t) + lowFreq[i + 2] * t);
+  }
+}
+
+// Nhận diện màu da — bao phủ từ da nhợt đến da ngăm đậm
+function isSkinPixel(r, g, b) {
+  if (r < 60 || r > 248) return false;                       // quá tối (tóc/mắt) hoặc quá sáng (nền)
+  if (r <= g || r <= b) return false;                        // R phải chiếm ưu thế (ấm)
+  if (r - Math.min(g, b) < 20) return false;                // phải có sắc ấm đủ mạnh
+  if (Math.max(r, g, b) - Math.min(r, g, b) < 15) return false; // không phải xám đều
+  if (b > g) return false;                                   // loại màu lạnh / xanh
+  if (r > 200 && (r - g) > 80) return false;                // loại môi/má đỏ bão hòa
+  return true;
+}
+
+// Box blur tách kênh RGB (H-pass rồi V-pass) — O(W·H·r), chính xác hơn moving-average
+function boxBlurRGB(src, W, H, r) {
+  const tmp = new Float32Array(src.length);
+  const out = new Float32Array(src.length);
+
+  // Horizontal pass: src → tmp
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let rs = 0, gs = 0, bs = 0, n = 0;
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = Math.max(0, Math.min(W - 1, x + dx));
+        const i = (y * W + nx) * 4;
+        rs += src[i]; gs += src[i + 1]; bs += src[i + 2]; n++;
+      }
+      const i = (y * W + x) * 4;
+      tmp[i] = rs / n; tmp[i + 1] = gs / n; tmp[i + 2] = bs / n; tmp[i + 3] = src[i + 3];
+    }
+  }
+
+  // Vertical pass: tmp → out
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) {
+      let rs = 0, gs = 0, bs = 0, n = 0;
+      for (let dy = -r; dy <= r; dy++) {
+        const ny = Math.max(0, Math.min(H - 1, y + dy));
+        const i = (ny * W + x) * 4;
+        rs += tmp[i]; gs += tmp[i + 1]; bs += tmp[i + 2]; n++;
+      }
+      const i = (y * W + x) * 4;
+      out[i] = rs / n; out[i + 1] = gs / n; out[i + 2] = bs / n; out[i + 3] = src[i + 3];
+    }
+  }
+
+  return out;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function clamp(v) {
   return Math.max(0, Math.min(255, Math.round(v)));
