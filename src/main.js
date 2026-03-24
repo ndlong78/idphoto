@@ -21,10 +21,6 @@ import {
 let pipelineStep = STEPS.IDLE;
 let isProcessing = false;
 
-/**
- * Chặn treo vô hạn cho các promise phụ thuộc mạng/CDN.
- * Nếu quá thời gian, trả về fallbackValue để pipeline vẫn tiếp tục.
- */
 async function withTimeoutFallback(promise, timeoutMs, fallbackValue) {
   let timerId = 0;
   try {
@@ -39,9 +35,6 @@ async function withTimeoutFallback(promise, timeoutMs, fallbackValue) {
   }
 }
 
-/**
- * Đọc file ảnh từ thiết bị thành HTMLImageElement.
- */
 function loadImageFromFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -76,7 +69,7 @@ async function processFile(file) {
     withTimeoutFallback(warmupAi(), 25_000, false),
     withTimeoutFallback(loadFaceModels(), 15_000, false),
   ]);
-  const aiReady = Boolean(aiReadyRaw);
+  const aiReady   = Boolean(aiReadyRaw);
   const faceReady = Boolean(faceReadyRaw);
   setLoadStep(1, 'done');
   setProgress(20);
@@ -129,9 +122,9 @@ async function processFile(file) {
     format: state.curFmt,
     aiReady,
     faceReady,
-    hasFace: Boolean(state.faceData),
+    hasFace:   Boolean(state.faceData),
     hasAiMask: Boolean(state.aiMaskImg),
-    aiError: state.aiError || null,
+    aiError:   state.aiError || null,
     durationMs: Math.round(performance.now() - pipelineStartedAt),
   });
 
@@ -143,40 +136,52 @@ async function processFile(file) {
 }
 
 async function reprocessAI() {
+  // FIX [CRITICAL]: Guard isProcessing — tránh reprocessAI() chạy đồng thời
+  // với handleFile() hoặc với chính nó khi user click nhiều lần.
+  if (isProcessing) {
+    toast('Đang xử lý, vui lòng đợi...', 'err');
+    return;
+  }
+
   if (!state.origFile) {
     toast('Chưa có ảnh', 'err');
     return;
   }
 
   const startedAt = performance.now();
-  if (!state.aiReady) {
-    setLoad('Đang tải AI...', 'Đang thử lại mô-đun tách nền');
-    const aiReady = await warmupAi();
-    if (!aiReady) {
-      toast('⚠️ Chưa tải được AI. Vui lòng kiểm tra mạng và thử lại.', 'err');
-      setAiInfoBar(false, state.aiError);
-      return;
+  isProcessing = true;
+  try {
+    if (!state.aiReady) {
+      setLoad('Đang tải AI...', 'Đang thử lại mô-đun tách nền');
+      const aiReady = await warmupAi();
+      if (!aiReady) {
+        toast('⚠️ Chưa tải được AI. Vui lòng kiểm tra mạng và thử lại.', 'err');
+        setAiInfoBar(false, state.aiError);
+        return;
+      }
     }
-  }
 
-  state.aiMaskImg = await runBackgroundRemoval(state.origFile);
-  if (!state.aiMaskImg) {
-    toast('⚠️ AI chưa xử lý được ảnh này. Đang giữ chế độ Flood Fill.', 'err');
-  }
-  setAiInfoBar(Boolean(state.aiMaskImg), state.aiError);
-  await renderToPreview();
+    state.aiMaskImg = await runBackgroundRemoval(state.origFile);
+    if (!state.aiMaskImg) {
+      toast('⚠️ AI chưa xử lý được ảnh này. Đang giữ chế độ Flood Fill.', 'err');
+    }
+    setAiInfoBar(Boolean(state.aiMaskImg), state.aiError);
+    await renderToPreview();
 
-  logEvent('pipeline.reprocess_ai', {
-    fileName: state.origFile?.name ?? null,
-    success: Boolean(state.aiMaskImg),
-    aiError: state.aiError || null,
-    durationMs: Math.round(performance.now() - startedAt),
-  });
+    logEvent('pipeline.reprocess_ai', {
+      fileName:  state.origFile?.name ?? null,
+      success:   Boolean(state.aiMaskImg),
+      aiError:   state.aiError || null,
+      durationMs: Math.round(performance.now() - startedAt),
+    });
+  } finally {
+    isProcessing = false;
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   setTelemetryContext({
-    page: 'main',
+    page:     'main',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
 
@@ -222,7 +227,7 @@ async function handleFile(file) {
       fileName: file.name,
       fileSize: file.size,
       mimeType: file.type,
-      error: validation.error,
+      error:    validation.error,
     }, 'error');
     return;
   }
@@ -241,7 +246,7 @@ async function handleFile(file) {
       fileName: file.name,
       fileSize: file.size,
       mimeType: file.type,
-      error: msg,
+      error:    msg,
     }, 'error');
   } finally {
     isProcessing = false;
