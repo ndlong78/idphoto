@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { clamp, isSkinPixel, colorDistance, featherMask } from '../src/render.js';
+import { clamp, isSkinPixel, isSkinPixelForShadow, applyFaceShadowCorrection, colorDistance, featherMask } from '../src/render.js';
 
 // ══════════════════════════════════════════════════════════════════════════════
 // clamp
@@ -250,4 +250,129 @@ test('featherMask: gradient đơn điệu từ biên vào tâm', () => {
     mask[2] <= mask[3],
     `Alpha tại index 2 (${mask[2]}) phải ≤ index 3 (${mask[3]})`,
   );
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// isSkinPixelForShadow
+// ══════════════════════════════════════════════════════════════════════════════
+
+test('isSkinPixelForShadow: da tối trong bóng (r=60, g=48, b=38) → true', () => {
+  assert.equal(isSkinPixelForShadow(60, 48, 38), true);
+});
+
+test('isSkinPixelForShadow: da ngăm sáng → true', () => {
+  assert.equal(isSkinPixelForShadow(100, 70, 55), true);
+});
+
+test('isSkinPixelForShadow: da sáng Caucasian → true', () => {
+  assert.equal(isSkinPixelForShadow(220, 170, 140), true);
+});
+
+test('isSkinPixelForShadow: pixel rất tối (r=20) → false', () => {
+  assert.equal(isSkinPixelForShadow(20, 15, 12), false);
+});
+
+test('isSkinPixelForShadow: pixel trắng → false', () => {
+  assert.equal(isSkinPixelForShadow(250, 248, 246), false);
+});
+
+test('isSkinPixelForShadow: g > r → false', () => {
+  assert.equal(isSkinPixelForShadow(80, 90, 70), false);
+});
+
+test('isSkinPixelForShadow: b > r → false', () => {
+  assert.equal(isSkinPixelForShadow(80, 70, 90), false);
+});
+
+test('isSkinPixelForShadow: b > g → false', () => {
+  assert.equal(isSkinPixelForShadow(100, 70, 80), false);
+});
+
+test('isSkinPixelForShadow: quá trung tính (r-min(g,b) < 8) → false', () => {
+  // r=50, g=46, b=44 → r - min = 50 - 44 = 6 < 8
+  assert.equal(isSkinPixelForShadow(50, 46, 44), false);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// applyFaceShadowCorrection
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Tạo ImageData giả từ mảng pixel [r,g,b,a, r,g,b,a, ...]
+ * (không dùng DOM vì môi trường Node.js test)
+ */
+function makeImageData(pixels) {
+  const data = new Uint8ClampedArray(pixels);
+  return { data, width: pixels.length / 4, height: 1 };
+}
+
+test('applyFaceShadowCorrection: amount=0 → không thay đổi pixel', () => {
+  const original = [80, 60, 45, 255,  200, 160, 130, 255];
+  const id = makeImageData([...original]);
+  applyFaceShadowCorrection(id, 0);
+  for (let i = 0; i < original.length; i++) {
+    assert.equal(id.data[i], original[i], `pixel[${i}] phải không đổi`);
+  }
+});
+
+test('applyFaceShadowCorrection: pixel da tối được làm sáng khi amount > 0', () => {
+  // Pixel 0: da tối trong bóng (sẽ được làm sáng)
+  // Pixel 1: da sáng (baseline cho avgLuma)
+  const id = makeImageData([
+    70, 55, 42, 255,    // da tối
+    200, 160, 130, 255, // da sáng
+  ]);
+  const darkR = id.data[0];
+  applyFaceShadowCorrection(id, 80);
+  assert.ok(id.data[0] > darkR, `Pixel da tối (${darkR}) phải được làm sáng, got ${id.data[0]}`);
+});
+
+test('applyFaceShadowCorrection: pixel không phải da không bị thay đổi', () => {
+  // Pixel 0: màu xanh (nền) — không phải da
+  // Pixel 1: da sáng (để có avgLuma)
+  const id = makeImageData([
+    168, 203, 232, 255,  // nền xanh
+    200, 160, 130, 255,  // da sáng
+  ]);
+  const blueR = id.data[0], blueG = id.data[1], blueB = id.data[2];
+  applyFaceShadowCorrection(id, 100);
+  assert.equal(id.data[0], blueR, 'R của nền xanh không được thay đổi');
+  assert.equal(id.data[1], blueG, 'G của nền xanh không được thay đổi');
+  assert.equal(id.data[2], blueB, 'B của nền xanh không được thay đổi');
+});
+
+test('applyFaceShadowCorrection: da sáng hơn avgLuma không bị thay đổi', () => {
+  // avgLuma được tính từ cả hai pixel da.
+  // Pixel sáng (luma≈168) sẽ nằm trên avgLuma (≈113) → không thay đổi.
+  // Pixel tối (luma≈58) nằm dưới avgLuma → bị làm sáng.
+  const id = makeImageData([
+    200, 160, 130, 255, // da sáng — luma ≈ 168
+    70,  55,  42,  255, // da tối  — luma ≈ 58 → kéo avgLuma xuống ~113
+  ]);
+  const brightR = id.data[0], brightG = id.data[1], brightB = id.data[2];
+  applyFaceShadowCorrection(id, 100);
+  // Pixel da sáng (luma > avgLuma) không được thay đổi
+  assert.equal(id.data[0], brightR, 'R của da sáng không được thay đổi');
+  assert.equal(id.data[1], brightG, 'G của da sáng không được thay đổi');
+  assert.equal(id.data[2], brightB, 'B của da sáng không được thay đổi');
+});
+
+test('applyFaceShadowCorrection: kết quả không vượt 255 (không overflow)', () => {
+  // Pixel da rất tối, amount = 100 → phải clamp về 255
+  const id = makeImageData([
+    30, 22, 15, 255,    // da cực tối
+    200, 160, 130, 255, // da sáng (baseline)
+  ]);
+  applyFaceShadowCorrection(id, 100);
+  for (let i = 0; i < id.data.length; i += 4) {
+    assert.ok(id.data[i]     <= 255, `R[${i}] không được vượt 255`);
+    assert.ok(id.data[i + 1] <= 255, `G[${i}] không được vượt 255`);
+    assert.ok(id.data[i + 2] <= 255, `B[${i}] không được vượt 255`);
+  }
+});
+
+test('applyFaceShadowCorrection: không có skin pixel → không crash (fallback avgLuma=120)', () => {
+  // Toàn pixel nền xanh, không có skin pixel
+  const id = makeImageData([168, 203, 232, 255, 168, 203, 232, 255]);
+  assert.doesNotThrow(() => applyFaceShadowCorrection(id, 50));
 });
