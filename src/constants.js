@@ -61,6 +61,13 @@ export const SKIN_MAX_BLEND          = 0.88;
 /** Bán kính blur tối đa (px) khi skin slider ở 100% */
 export const SKIN_BLUR_RADIUS_MAX    = 8;
 
+// ── Face shadow correction ────────────────────────────────────
+/**
+ * Mức tăng sáng tối đa (0–255) khi làm sáng vùng bóng tối trên khuôn mặt.
+ * 80 ≈ nâng pixel tối (~30 luma) lên vùng trung bình (~110 luma) ở strength=1.
+ */
+export const SHADOW_LIFT_MAX         = 80;
+
 // ── Debounce (ms) ─────────────────────────────────────────────
 /**
  * Skin slider debounce — boxBlurRGB + getImageData/putImageData
@@ -73,3 +80,9 @@ export const SKIN_DEBOUNCE_MS        = 250;
  * đủ nặng để cần debounce, nhưng nhẹ hơn skin nên threshold thấp hơn.
  */
 export const FEATHER_DEBOUNCE_MS     = 150;
+
+/**
+ * Shadow slider debounce — hai vòng lặp O(W·H) tương tự skin,
+ * dùng cùng ngưỡng để đảm bảo responsiveness.
+ */
+export const SHADOW_DEBOUNCE_MS      = 250;

@@ -4,6 +4,7 @@ import {
   FLOOD_FILL_TOLERANCE,
   SKIN_MAX_BLEND,
   SKIN_BLUR_RADIUS_MAX,
+  SHADOW_LIFT_MAX,
 } from './constants.js';
 
 // ─── Canvas reuse ─────────────────────────────────────────────────────────────
@@ -160,12 +161,13 @@ function applyFloodFillAlpha(data, mask, bg) {
 // ─── Image adjustments ────────────────────────────────────────────────────────
 
 function applyAdjustments(imageData) {
-  const { bright, contrast, sharp, skin } = getControls();
-  const b  = bright.valueAsNumber;
-  const c  = contrast.valueAsNumber;
-  const s  = sharp.valueAsNumber / 100;
-  const sk = skin.valueAsNumber;
-  const d  = imageData.data;
+  const { bright, contrast, sharp, skin, shadow } = getControls();
+  const b   = bright.valueAsNumber;
+  const c   = contrast.valueAsNumber;
+  const s   = sharp.valueAsNumber / 100;
+  const sk  = skin.valueAsNumber;
+  const shd = shadow.valueAsNumber;
+  const d   = imageData.data;
 
   const factor = (259 * (c + 255)) / (255 * (259 - c));
   for (let i = 0; i < d.length; i += 4) {
@@ -174,8 +176,9 @@ function applyAdjustments(imageData) {
     d[i + 2] = clamp(factor * (d[i + 2] - 128) + 128 + b);
   }
 
-  if (sk > 0) applySkinSmoothing(imageData, sk);
-  if (s > 0)  unsharpMask(imageData, 1.2, s * 1.2);
+  if (shd > 0) applyFaceShadowCorrection(imageData, shd);
+  if (sk > 0)  applySkinSmoothing(imageData, sk);
+  if (s > 0)   unsharpMask(imageData, 1.2, s * 1.2);
 }
 
 // ─── Unsharp mask ─────────────────────────────────────────────────────────────
@@ -346,6 +349,64 @@ export function isSkinPixel(r, g, b) {
   if (b > g) return false;
   if (r > 200 && (r - g) > 80) return false;
   return true;
+}
+
+/**
+ * Phát hiện pixel da trong vùng bóng tối với ngưỡng nới lỏng hơn isSkinPixel.
+ * Chấp nhận pixel da tối (r ≥ 25) để nhận diện bóng đổ trên khuôn mặt.
+ *
+ * @param {number} r - Kênh đỏ (0–255)
+ * @param {number} g - Kênh xanh lá (0–255)
+ * @param {number} b - Kênh xanh lam (0–255)
+ * @returns {boolean} true nếu pixel có thể là da trong bóng tối
+ */
+export function isSkinPixelForShadow(r, g, b) {
+  if (r < 25 || r > 248) return false;
+  if (r <= g || r <= b) return false;
+  if (r - Math.min(g, b) < 8) return false;
+  if (b > g) return false;
+  return true;
+}
+
+/**
+ * Nhận diện vùng da mặt bị tối/bóng và làm sáng chúng.
+ *
+ * Thuật toán hai bước:
+ *   Pass 1 — Tính luminance trung bình của skin pixel sáng (dùng isSkinPixel nghiêm ngặt).
+ *   Pass 2 — Với mỗi pixel da trong vùng tối (dùng isSkinPixelForShadow mở rộng),
+ *             nâng sáng tỉ lệ với mức chênh lệch so với trung bình.
+ *
+ * Fallback: nếu không tìm thấy skin pixel sáng, lấy avgLuma = 120.
+ *
+ * @param {ImageData} imageData - Dữ liệu ảnh (sửa in-place)
+ * @param {number} amount - Mức độ làm sáng (0–100)
+ */
+export function applyFaceShadowCorrection(imageData, amount) {
+  if (amount <= 0) return;
+  const { data } = imageData;
+  const strength = amount / 100;
+
+  // Pass 1: tính luminance trung bình của da sáng
+  let sum = 0, cnt = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (!isSkinPixel(data[i], data[i + 1], data[i + 2])) continue;
+    sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    cnt++;
+  }
+  const avgLuma = cnt > 0 ? sum / cnt : 120;
+
+  // Pass 2: làm sáng pixel da trong bóng tối
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    if (!isSkinPixelForShadow(r, g, b)) continue;
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    const deficit = avgLuma - luma;
+    if (deficit <= 0) continue;
+    const lift = Math.min(deficit * strength * 0.8, SHADOW_LIFT_MAX * strength);
+    data[i]     = clamp(r + lift);
+    data[i + 1] = clamp(g + lift);
+    data[i + 2] = clamp(b + lift);
+  }
 }
 
 // ─── Box blur (separable) — với buffer reuse ──────────────────────────────────

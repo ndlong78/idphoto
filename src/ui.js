@@ -1,7 +1,7 @@
 import { applyZoom, centerFace, cleanupCropEvents, computeFrame, fitImage, initCrop } from './crop.js';
 import { renderResult, renderToPreview } from './render.js';
 import { FMTS, resetState, state } from './state.js';
-import { SKIN_DEBOUNCE_MS, FEATHER_DEBOUNCE_MS } from './constants.js';
+import { SKIN_DEBOUNCE_MS, FEATHER_DEBOUNCE_MS, SHADOW_DEBOUNCE_MS } from './constants.js';
 
 let toastTimer = null;
 let uiController = null;
@@ -12,11 +12,12 @@ let uiController = null;
 // và gây crash trong renderToPreview().
 let skinDebounceTimer    = 0;
 let featherDebounceTimer = 0;
+let shadowDebounceTimer  = 0;
 
 /**
  * Trả về object chứa các HTMLInputElement của thanh điều chỉnh ảnh.
  *
- * @returns {{bright: HTMLElement, contrast: HTMLElement, sharp: HTMLElement, skin: HTMLElement, feather: HTMLElement}}
+ * @returns {{bright: HTMLElement, contrast: HTMLElement, sharp: HTMLElement, skin: HTMLElement, feather: HTMLElement, shadow: HTMLElement}}
  */
 export function getControls() {
   return {
@@ -25,6 +26,7 @@ export function getControls() {
     sharp:    document.getElementById('sharp'),
     skin:     document.getElementById('skin'),
     feather:  document.getElementById('feather'),
+    shadow:   document.getElementById('shadow'),
   };
 }
 
@@ -51,8 +53,10 @@ export function initUI(actions) {
   // và nếu fire sau khi origImg = null sẽ crash renderToPreview().
   clearTimeout(skinDebounceTimer);
   clearTimeout(featherDebounceTimer);
+  clearTimeout(shadowDebounceTimer);
   skinDebounceTimer    = 0;
   featherDebounceTimer = 0;
+  shadowDebounceTimer  = 0;
 
   const uploadZone = document.getElementById('upload-zone');
   const fileInput  = document.getElementById('file-input');
@@ -172,8 +176,10 @@ export function initUI(actions) {
     // Nếu không clear, timer có thể fire SAU khi origImg = null.
     clearTimeout(skinDebounceTimer);
     clearTimeout(featherDebounceTimer);
+    clearTimeout(shadowDebounceTimer);
     skinDebounceTimer    = 0;
     featherDebounceTimer = 0;
+    shadowDebounceTimer  = 0;
 
     cleanupCropEvents();
     resetState();
@@ -205,7 +211,7 @@ export function initUI(actions) {
     }, { signal });
   });
 
-  [['bright', 'bv'], ['contrast', 'cv'], ['sharp', 'sv'], ['skin', 'skv'], ['feather', 'fv']].forEach(([id, lblId]) => {
+  [['bright', 'bv'], ['contrast', 'cv'], ['sharp', 'sv'], ['skin', 'skv'], ['feather', 'fv'], ['shadow', 'shadv']].forEach(([id, lblId]) => {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
       document.getElementById(lblId).textContent = input.value;
@@ -216,6 +222,9 @@ export function initUI(actions) {
       } else if (id === 'feather') {
         clearTimeout(featherDebounceTimer);
         featherDebounceTimer = window.setTimeout(() => void safeRender(), FEATHER_DEBOUNCE_MS);
+      } else if (id === 'shadow') {
+        clearTimeout(shadowDebounceTimer);
+        shadowDebounceTimer = window.setTimeout(() => void safeRender(), SHADOW_DEBOUNCE_MS);
       } else {
         void safeRender();
       }
