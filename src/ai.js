@@ -289,8 +289,9 @@ export async function runBackgroundRemoval(file, progress) {
       const image = await new Promise((resolve, reject) => {
         const url = URL.createObjectURL(blob);
         const img = new Image();
-        img.onload  = () => { URL.revokeObjectURL(url); resolve(img); };
-        img.onerror = reject;
+        const cleanup = () => URL.revokeObjectURL(url);
+        img.onload  = () => { cleanup(); resolve(img); };
+        img.onerror = (err) => { cleanup(); reject(err); };
         img.src     = url;
       });
       state.aiError = '';

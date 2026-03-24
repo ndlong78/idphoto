@@ -57,7 +57,8 @@ export function resetState() {
  * @returns {{ok: boolean, error?: string}} Kết quả kiểm tra
  */
 export function validateImageFile(file) {
-  const hasImageMime = file.type.startsWith('image/');
+  const mime = String(file.type || '').toLowerCase();
+  const hasImageMime = /^(image\/jpeg|image\/png|image\/webp|image\/heic|image\/heif)$/.test(mime);
   const hasImageExt  = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
   // FIX: thêm HEIF vào error message (regex đã hỗ trợ nhưng message thiếu)
   if (!hasImageMime && !hasImageExt)
