@@ -15,6 +15,10 @@ let lastPoint = { x: 0, y: 0 };
 let lastPinch = 0;
 let needDraw = false;
 
+/**
+ * Khởi tạo canvas crop: thiết lập kích thước, sự kiện chuột/cảm ứng, và vòng lặp animationFrame.
+ * Tự động gọi computeFrame(), fitImage(), và centerFace() nếu có dữ liệu khuôn mặt.
+ */
 export function initCrop() {
   const canvas = document.getElementById('crop-canvas');
   if (!canvas || !state.origImg) return;
@@ -113,6 +117,9 @@ export function initCrop() {
   needDraw = true;
 }
 
+/**
+ * Huỷ toàn bộ event listener và dừng animation loop của crop canvas.
+ */
 export function cleanupCropEvents() {
   cropController?.abort();
   cropController = null;
@@ -122,6 +129,10 @@ export function cleanupCropEvents() {
   }
 }
 
+/**
+ * Tính toán và cập nhật state.frame — vùng frame ID photo trên crop canvas,
+ * giữ đúng tỉ lệ khung (aspect ratio) theo định dạng hiện tại.
+ */
 export function computeFrame() {
   const fmt = FMTS[state.curFmt];
   const asp = fmt.w / fmt.h;
@@ -180,6 +191,15 @@ export function centerFace() {
   syncZoomUI();
 }
 
+/**
+ * Zoom ảnh theo hệ số factor, tâm zoom tại điểm (px, py) trên crop canvas.
+ * Scale được clamp về [0.04, 25] để tránh zoom quá mức.
+ * Tự động trigger renderToPreview().
+ *
+ * @param {number} factor - Hệ số zoom (> 1 = phóng to, < 1 = thu nhỏ)
+ * @param {number} px - Tọa độ x tâm zoom (CSS pixel)
+ * @param {number} py - Tọa độ y tâm zoom (CSS pixel)
+ */
 export function applyZoom(factor, px, py) {
   const ns = Math.max(0.04, Math.min(25, state.crop.scale * factor));
   const sf = ns / state.crop.scale;

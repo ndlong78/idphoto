@@ -87,6 +87,12 @@ export async function renderResult(scale = 1) {
   return _outCanvas;
 }
 
+/**
+ * Render ảnh kết quả vào canvas preview (#result-canvas).
+ * Có render lock: bỏ qua nếu đang render để tránh race condition.
+ *
+ * @returns {Promise<void>}
+ */
 export async function renderToPreview() {
   // FIX [CRITICAL]: Lock để tránh hai render chạy đồng thời trên shared canvas.
   // Nếu đang render, bỏ qua request mới thay vì để chúng xen kẽ nhau.
@@ -225,6 +231,15 @@ function floodFill(imgData, tol) {
 
 // ─── Feather mask ─────────────────────────────────────────────────────────────
 
+/**
+ * Làm mềm mép mask bằng thuật toán distance transform gần đúng (separable 8-hướng).
+ * Pixels background (mask[i] === 0) không bị thay đổi.
+ *
+ * @param {Uint8Array} mask - Mask nhị phân (0 = background, 255 = foreground), sửa in-place
+ * @param {number} W - Chiều rộng ảnh (pixels)
+ * @param {number} H - Chiều cao ảnh (pixels)
+ * @param {number} radius - Bán kính feather (pixels); radius ≤ 0 thì không làm gì
+ */
 export function featherMask(mask, W, H, radius) {
   if (radius <= 0) return;
 
@@ -280,6 +295,14 @@ function sampleBackground(data, W, H) {
   };
 }
 
+/**
+ * Tính khoảng cách màu sắc có trọng số luma giữa hai pixel.
+ * Công thức: sqrt(ΔR²×0.299 + ΔG²×0.587 + ΔB²×0.114)
+ *
+ * @param {{r: number, g: number, b: number}} a - Pixel thứ nhất
+ * @param {{r: number, g: number, b: number}} b - Pixel thứ hai
+ * @returns {number} Khoảng cách màu (0–441)
+ */
 export function colorDistance(a, b) {
   return Math.sqrt(
     (a.r - b.r) ** 2 * 0.299 +
@@ -306,6 +329,15 @@ function applySkinSmoothing(imageData, amount) {
   }
 }
 
+/**
+ * Phát hiện pixel da người dựa trên heuristic màu sắc RGB.
+ * Hỗ trợ nhiều sắc da từ sáng đến tối (Caucasian, East Asian, South Asian, African).
+ *
+ * @param {number} r - Kênh đỏ (0–255)
+ * @param {number} g - Kênh xanh lá (0–255)
+ * @param {number} b - Kênh xanh lam (0–255)
+ * @returns {boolean} true nếu pixel có khả năng là da người
+ */
 export function isSkinPixel(r, g, b) {
   if (r < 60 || r > 248) return false;
   if (r <= g || r <= b) return false;
@@ -362,6 +394,13 @@ function boxBlurRGB(src, W, H, r) {
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
+/**
+ * Làm tròn và clamp giá trị về khoảng [0, 255].
+ * NaN và giá trị âm → 0; giá trị > 255 → 255.
+ *
+ * @param {number} v - Giá trị đầu vào
+ * @returns {number} Số nguyên trong [0, 255]
+ */
 export function clamp(v) {
   const r = Math.round(v);
   if (!(r > 0)) return 0;

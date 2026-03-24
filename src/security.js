@@ -15,6 +15,12 @@ const ALLOWED_ORIGINS = new Set([
   'https://esm.sh',
 ]);
 
+/**
+ * Kiểm tra URL có nằm trong allowlist HTTPS không.
+ *
+ * @param {string} url - URL cần kiểm tra
+ * @returns {boolean} true nếu URL hợp lệ và được phép
+ */
 export function isAllowedRemoteUrl(url) {
   try {
     const parsed = new URL(url);
@@ -24,6 +30,14 @@ export function isAllowedRemoteUrl(url) {
   }
 }
 
+/**
+ * Kiểm tra URL và throw nếu không nằm trong allowlist.
+ * Ghi log telemetry khi bị chặn.
+ *
+ * @param {string} url - URL cần kiểm tra
+ * @param {string} [context='remote_resource'] - Ngữ cảnh để log
+ * @throws {Error} Nếu URL không được phép
+ */
 export function assertAllowedRemoteUrl(url, context = 'remote_resource') {
   if (!isAllowedRemoteUrl(url)) {
     logEvent('security.remote_url_blocked', { url, context }, 'error');
@@ -31,6 +45,11 @@ export function assertAllowedRemoteUrl(url, context = 'remote_resource') {
   }
 }
 
+/**
+ * Trả về danh sách các origin được phép tải tài nguyên.
+ *
+ * @returns {string[]} Mảng các origin HTTPS được phép
+ */
 export function getAllowedOrigins() {
   return [...ALLOWED_ORIGINS];
 }

@@ -53,6 +53,11 @@ let runtimeContext = {
   hardwareConcurrency: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency ?? null : null,
 };
 
+/**
+ * Cập nhật context bổ sung cho các event telemetry (ví dụ: page, timezone).
+ *
+ * @param {Record<string, unknown>} [context={}] - Các trường context cần bổ sung
+ */
 export function setTelemetryContext(context = {}) {
   runtimeContext = { ...runtimeContext, ...context };
 }
@@ -121,6 +126,15 @@ function shouldLogToConsole(level) {
   return eventRank <= wantedRank;
 }
 
+/**
+ * Ghi một event telemetry vào localStorage và tùy chọn gửi lên endpoint.
+ * Context lưu localStorage không chứa fingerprinting; endpoint nhận full context.
+ *
+ * @param {string} type - Tên event (ví dụ: 'pipeline.completed')
+ * @param {Record<string, unknown>} [payload={}] - Dữ liệu kèm theo
+ * @param {'info'|'warn'|'error'} [level='info'] - Mức độ nghiêm trọng
+ * @returns {object} Event đã ghi
+ */
 export function logEvent(type, payload = {}, level = 'info') {
   const id = globalThis.crypto?.randomUUID?.()
     ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -155,10 +169,18 @@ export function logEvent(type, payload = {}, level = 'info') {
   return localEvent;
 }
 
+/**
+ * Lấy toàn bộ event telemetry từ localStorage.
+ *
+ * @returns {object[]} Mảng các event đã ghi
+ */
 export function getTelemetryEvents() {
   return loadBuffer();
 }
 
+/**
+ * Xóa toàn bộ event telemetry khỏi localStorage.
+ */
 export function clearTelemetryEvents() {
   saveBuffer([]);
 }
