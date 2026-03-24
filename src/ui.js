@@ -187,6 +187,7 @@ export function initUI(actions) {
       btn.classList.add('active');
       state.curFmt = btn.dataset.fmt;
       computeFrame();
+      zoomResultFit();
       void safeRender();
       document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
     }, { signal });

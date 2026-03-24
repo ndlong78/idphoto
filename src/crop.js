@@ -148,6 +148,7 @@ export function computeFrame() {
   }
 
   state.frame = { x: (state.cW - fw) / 2, y: (state.cH - fh) / 2, w: fw, h: fh };
+  needDraw = true;
 }
 
 /**
