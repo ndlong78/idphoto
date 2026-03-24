@@ -28,6 +28,10 @@ export const state = {
   section: 'upload',
 };
 
+/**
+ * Đặt lại state về giá trị ban đầu sau khi user upload ảnh mới.
+ * Lưu ý: state.aiReady không được reset (giữ nguyên model đã tải).
+ */
 export function resetState() {
   state.origImg   = null;
   state.origFile  = null;
@@ -46,6 +50,12 @@ export function resetState() {
   // Xem thêm: warmupAi() trong ai.js — guard idempotent.
 }
 
+/**
+ * Kiểm tra file ảnh hợp lệ (MIME type, extension, kích thước ≤ 15MB).
+ *
+ * @param {File} file - File cần kiểm tra
+ * @returns {{ok: boolean, error?: string}} Kết quả kiểm tra
+ */
 export function validateImageFile(file) {
   const hasImageMime = file.type.startsWith('image/');
   const hasImageExt  = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);

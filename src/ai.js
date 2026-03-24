@@ -128,6 +128,12 @@ function loadScriptSequentially(urls) {
   );
 }
 
+/**
+ * Tải và khởi tạo module AI tách nền.
+ * Idempotent: nếu đã tải thành công thì trả về true ngay.
+ *
+ * @returns {Promise<boolean>} true nếu AI sẵn sàng, false nếu tải thất bại
+ */
 export async function warmupAi() {
   if (removeBackgroundFn) {
     state.aiReady = true;
@@ -176,6 +182,12 @@ export async function warmupAi() {
   return false;
 }
 
+/**
+ * Tải mô hình nhận diện khuôn mặt (TinyFaceDetector + landmarks).
+ * Idempotent và chống race condition: nhiều lời gọi đồng thời dùng chung promise.
+ *
+ * @returns {Promise<boolean>} true nếu tải thành công
+ */
 export async function loadFaceModels() {
   if (faceModelsReady) return true;
   if (faceModelLoadPromise) return faceModelLoadPromise;
@@ -216,6 +228,12 @@ export async function loadFaceModels() {
   }
 }
 
+/**
+ * Nhận diện khuôn mặt đầu tiên trong canvas.
+ *
+ * @param {HTMLCanvasElement} canvas - Canvas chứa ảnh gốc
+ * @returns {Promise<{box: object, score: number}|null>} Dữ liệu khuôn mặt hoặc null
+ */
 export async function detectFace(canvas) {
   const ready = faceModelsReady ? true : await loadFaceModels();
   if (!ready || !faceApi) return null;
@@ -237,6 +255,13 @@ export async function detectFace(canvas) {
   }
 }
 
+/**
+ * Chạy AI tách nền cho file ảnh.
+ *
+ * @param {File} file - File ảnh đầu vào
+ * @param {function(number, number): void} [progress] - Callback tiến trình (current, total)
+ * @returns {Promise<HTMLImageElement|null>} Ảnh đã tách nền (PNG RGBA) hoặc null nếu thất bại
+ */
 export async function runBackgroundRemoval(file, progress) {
   if (!state.aiReady || !removeBackgroundFn) return null;
 

@@ -13,6 +13,11 @@ let uiController = null;
 let skinDebounceTimer    = 0;
 let featherDebounceTimer = 0;
 
+/**
+ * Trả về object chứa các HTMLInputElement của thanh điều chỉnh ảnh.
+ *
+ * @returns {{bright: HTMLElement, contrast: HTMLElement, sharp: HTMLElement, skin: HTMLElement, feather: HTMLElement}}
+ */
 export function getControls() {
   return {
     bright:   document.getElementById('bright'),
@@ -23,6 +28,19 @@ export function getControls() {
   };
 }
 
+/**
+ * Khởi tạo toàn bộ event listener của UI. Có thể gọi lại sau resetState().
+ * Clear timer debounce cũ trước khi bind để tránh stale callback.
+ *
+ * @param {{
+ *   onPickFile: function(): void,
+ *   onReprocessAI: function(): void,
+ *   onDownload: function(string): Promise<void>,
+ *   onCopy: function(): Promise<void>,
+ *   onFileDrop: function(File): void,
+ *   onFileInput: function(File): void,
+ * }} actions - Callback handlers từ main.js
+ */
 export function initUI(actions) {
   uiController?.abort();
   uiController = new AbortController();
@@ -245,6 +263,11 @@ function bindAsyncClick(id, fn, signal) {
 
 // ─── Section management ───────────────────────────────────────────────────────
 
+/**
+ * Chuyển đổi section hiển thị ('upload' | 'loading' | 'editor').
+ *
+ * @param {'upload'|'loading'|'editor'} section
+ */
 export function setSection(section) {
   state.section = section;
   ['upload', 'loading', 'editor'].forEach((s) => {
@@ -262,6 +285,11 @@ export function setSection(section) {
   }
 }
 
+/**
+ * Cập nhật trạng thái thanh tiến trình bước (s1–s4).
+ *
+ * @param {number} active - Bước đang active (1–4)
+ */
 export function setSteps(active) {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById(`s${i}`);
@@ -271,20 +299,42 @@ export function setSteps(active) {
   }
 }
 
+/**
+ * Cập nhật tiêu đề và phụ đề của màn hình loading.
+ *
+ * @param {string} title - Tiêu đề chính
+ * @param {string} sub - Phụ đề (có thể rỗng)
+ */
 export function setLoad(title, sub) {
   document.getElementById('load-title').textContent = title;
   document.getElementById('load-sub').textContent   = sub;
 }
 
+/**
+ * Cập nhật thanh tiến trình loading (0–100%).
+ *
+ * @param {number} percent - Phần trăm hoàn thành (0–100)
+ */
 export function setProgress(percent) {
   document.getElementById('pfill').style.width = `${percent}%`;
 }
 
+/**
+ * Cập nhật trạng thái bước loading (ls1–ls4).
+ *
+ * @param {number} step - Số bước (1–4)
+ * @param {'active'|'done'|''} status - Trạng thái hiển thị
+ */
 export function setLoadStep(step, status) {
   const el = document.getElementById(`ls${step}`);
   el.className = `ls ${status}`;
 }
 
+/**
+ * Cập nhật thanh trạng thái nhận diện khuôn mặt.
+ *
+ * @param {number|null} score - Điểm tin cậy (0–1), null nếu không tìm thấy mặt
+ */
 export function setFaceStatus(score) {
   const bar = document.getElementById('face-bar');
   const txt = document.getElementById('face-txt');
@@ -297,6 +347,12 @@ export function setFaceStatus(score) {
   }
 }
 
+/**
+ * Cập nhật thanh thông tin AI (thành công hoặc fallback flood fill).
+ *
+ * @param {boolean} success - true nếu AI tách nền thành công
+ * @param {string} [reason=''] - Lý do thất bại (nếu có)
+ */
 export function setAiInfoBar(success, reason = '') {
   const bar = document.getElementById('ai-info-bar');
   bar.replaceChildren();
@@ -325,6 +381,12 @@ export function setAiInfoBar(success, reason = '') {
   }
 }
 
+/**
+ * Hiển thị thông báo toast trong 3.5 giây.
+ *
+ * @param {string} message - Nội dung thông báo
+ * @param {'ok'|'err'} [type='ok'] - Loại thông báo (màu sắc)
+ */
 export function toast(message, type = 'ok') {
   const el = document.getElementById('toast');
   el.textContent = message;
@@ -333,6 +395,9 @@ export function toast(message, type = 'ok') {
   toastTimer = window.setTimeout(() => { el.className = ''; }, 3500);
 }
 
+/**
+ * Đồng bộ label % zoom và thanh range slider từ state.crop.scale.
+ */
 export function syncZoomUI() {
   const percent = Math.round(state.crop.scale * 100);
   document.getElementById('zoom-lbl').textContent = `${percent}%`;
@@ -417,6 +482,12 @@ function applyLightboxTransform() {
 
 // ─── Download ─────────────────────────────────────────────────────────────────
 
+/**
+ * Xuất ảnh kết quả dưới dạng file download.
+ *
+ * @param {'jpeg600'|'jpeg300'|'png'} mode - Định dạng và DPI xuất
+ * @returns {Promise<void>}
+ */
 export async function download(mode) {
   const fmt       = FMTS[state.curFmt];
   const baseDpi   = fmt.dpi;
@@ -432,6 +503,12 @@ export async function download(mode) {
   link.click();
 }
 
+/**
+ * Sao chép ảnh kết quả vào clipboard (PNG).
+ * Fallback: mở ảnh trong tab mới nếu Clipboard API không được hỗ trợ.
+ *
+ * @returns {Promise<{method: 'clipboard'|'newtab'}>}
+ */
 export async function copyToClipboard() {
   const canvas = document.getElementById('result-canvas');
   const blob = await new Promise((resolve, reject) => {
@@ -449,6 +526,9 @@ export async function copyToClipboard() {
   }
 }
 
+/**
+ * Chuyển sang màn hình editor và khởi tạo canvas crop.
+ */
 export function mountEditor() {
   setSection('editor');
   initCrop();
