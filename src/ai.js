@@ -18,36 +18,15 @@ const FACE_API_SCRIPT_SOURCES = [
   'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js',
 ];
 
-// ── Module sources ─────────────────────────────────────────────────────────
-//
-// esm.sh?bundle  → bundle tự chứa hoàn toàn, không có internal bare import
-//                  ra ngoài → nguồn sạch nhất, dùng ưu tiên.
-// jsdelivr/dist  → fallback: gói này internal import lại esm.sh nên cần
-//                  CSP cho phép cả hai (đã xử lý trong index.html).
 const BG_REMOVAL_MODULE_SOURCES = [
   'https://esm.sh/@imgly/background-removal@1.5.5?bundle',
   'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
 ];
 
-// ── Data sources ───────────────────────────────────────────────────────────
-//
-// FIX: Xóa jsdelivr data source.
-//
-// Lý do: @imgly/background-removal-data KHÔNG tồn tại như một npm package
-// riêng trên jsdelivr — fetch resources.json luôn trả về 404.
-// Log lỗi: GET https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.5.5/dist/resources.json 404
-//
-// staticimgly.com là CDN chính thức của imgly, luôn có đầy đủ model weights.
-// Chỉ giữ một nguồn duy nhất — sạch hơn và không gây noisy 404 error.
 const BG_REMOVAL_DATA_SOURCES = [
   { publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/', model: 'isnet_fp16' },
 ];
 
-/**
- * Bọc bất kỳ Promise nào với race condition thời gian.
- * Nếu CDN / model tải quá chậm, reject với message rõ ràng
- * thay vì spinner vô hạn.
- */
 function withTimeout(promise, ms, message) {
   let timerId;
   const timer = new Promise((_, reject) => {
@@ -62,13 +41,22 @@ function withTimeout(promise, ms, message) {
   ]);
 }
 
+/**
+ * FIX [WARNING]: Kiểm tra script đã được inject vào DOM chưa trước khi thêm mới.
+ * Nếu load thành công nhưng globalThis.faceapi = null (file hỏng),
+ * faceApiScriptPromise bị reset → lần sau inject script trùng lặp → conflict.
+ */
+function isScriptAlreadyLoaded(url) {
+  return [...document.querySelectorAll('script')].some((s) => s.src === url);
+}
+
 function safeScriptElement(url) {
   assertAllowedRemoteUrl(url, 'face_api_script');
   const script = document.createElement('script');
-  script.async = true;
-  script.crossOrigin = 'anonymous';
+  script.async         = true;
+  script.crossOrigin   = 'anonymous';
   script.referrerPolicy = 'no-referrer';
-  script.src = url;
+  script.src           = url;
   return script;
 }
 
@@ -87,19 +75,25 @@ function normalizeWarmupErrorMessage(rawMessage = '') {
   return String(rawMessage || 'Không tải được module AI từ CDN');
 }
 
-/**
- * Tải face-api.js script tuần tự qua danh sách CDN fallback.
- */
 function loadScriptSequentially(urls) {
   if (faceApiScriptPromise) return faceApiScriptPromise;
 
   faceApiScriptPromise = (async () => {
     for (const url of urls) {
+      // FIX [WARNING]: Nếu script đã tồn tại trong DOM (từ lần load trước bị
+      // faceapi=null), không inject lại — đợi faceapi xuất hiện trên globalThis.
+      if (isScriptAlreadyLoaded(url)) {
+        if (globalThis.faceapi) return globalThis.faceapi;
+        // Script đã inject nhưng faceapi vẫn null — không thể dùng URL này
+        logEvent('ai.face_script_already_loaded_but_null', { url }, 'warn');
+        continue;
+      }
+
       try {
         const startedAt = performance.now();
         await new Promise((resolve, reject) => {
           const script = safeScriptElement(url);
-          script.onload = () => resolve();
+          script.onload  = () => resolve();
           script.onerror = () => reject(new Error(`Không tải được script: ${url}`));
           document.head.appendChild(script);
         });
@@ -110,6 +104,9 @@ function loadScriptSequentially(urls) {
         });
 
         if (globalThis.faceapi) return globalThis.faceapi;
+
+        // Script load OK nhưng faceapi vẫn null → file hỏng, thử URL tiếp theo
+        logEvent('ai.face_script_loaded_but_null', { url }, 'warn');
       } catch (err) {
         logEvent('ai.face_script_failed', {
           url,
@@ -121,16 +118,16 @@ function loadScriptSequentially(urls) {
   })();
 
   return faceApiScriptPromise.then(
-    (result) => { if (!result) faceApiScriptPromise = null; return result; },
-    (err)    => { faceApiScriptPromise = null; return Promise.reject(err); },
+    (result) => {
+      // FIX: Chỉ reset promise nếu thực sự null — nhưng KHÔNG reset nếu
+      // script đã được inject (để tránh inject lại lần sau).
+      if (!result) faceApiScriptPromise = null;
+      return result;
+    },
+    (err) => { faceApiScriptPromise = null; return Promise.reject(err); },
   );
 }
 
-/**
- * Khởi tạo module background removal.
- * Idempotent: nếu đã load thành công trước đó, trả về true ngay lập tức
- * mà không tải lại CDN.
- */
 export async function warmupAi() {
   if (removeBackgroundFn) {
     state.aiReady = true;
@@ -138,7 +135,7 @@ export async function warmupAi() {
     return true;
   }
 
-  let lastError = '';
+  let lastError    = '';
   let lastRawError = '';
   for (const url of BG_REMOVAL_MODULE_SOURCES) {
     try {
@@ -150,20 +147,20 @@ export async function warmupAi() {
         state.aiReady = true;
         state.aiError = '';
         logEvent('ai.warmup_success', {
-          source: url,
+          source:     url,
           durationMs: Math.round(performance.now() - startedAt),
         });
         return true;
       }
-      lastError = `Module AI không export hàm removeBackground (${url})`;
+      lastError    = `Module AI không export hàm removeBackground (${url})`;
       lastRawError = lastError;
     } catch (err) {
       const rawError = err instanceof Error ? err.message : `Không thể import AI từ ${url}`;
-      lastRawError = rawError;
-      lastError = normalizeWarmupErrorMessage(rawError);
+      lastRawError   = rawError;
+      lastError      = normalizeWarmupErrorMessage(rawError);
       logEvent('ai.warmup_failed_attempt', {
         source: url,
-        error: lastError,
+        error:  lastError,
         rawError,
       }, 'warn');
     }
@@ -172,8 +169,8 @@ export async function warmupAi() {
   state.aiReady = false;
   state.aiError = lastError || 'Không tải được module AI từ CDN';
   logEvent('ai.warmup_failed', {
-    error: state.aiError,
-    rawError: lastRawError || null,
+    error:       state.aiError,
+    rawError:    lastRawError || null,
     degradedMode: true,
   }, 'warn');
   return false;
@@ -198,7 +195,7 @@ export async function loadFaceModels() {
       ]);
       faceModelsReady = true;
       logEvent('ai.face_models_loaded', {
-        source: FACE_MODEL_FALLBACK,
+        source:     FACE_MODEL_FALLBACK,
         durationMs: Math.round(performance.now() - startedAt),
       });
       return true;
@@ -206,7 +203,7 @@ export async function loadFaceModels() {
       faceModelsReady = false;
       logEvent('ai.face_models_failed', {
         source: FACE_MODEL_FALLBACK,
-        error: err instanceof Error ? err.message : String(err),
+        error:  err instanceof Error ? err.message : String(err),
       }, 'error');
       return false;
     }
@@ -227,8 +224,8 @@ export async function detectFace(canvas) {
       .detectSingleFace(
         canvas,
         new faceApi.TinyFaceDetectorOptions({
-          inputSize:       FACE_DETECT_INPUT_SIZE,
-          scoreThreshold:  FACE_DETECT_THRESHOLD,
+          inputSize:      FACE_DETECT_INPUT_SIZE,
+          scoreThreshold: FACE_DETECT_THRESHOLD,
         }),
       )
       .withFaceLandmarks(true);
@@ -267,14 +264,14 @@ export async function runBackgroundRemoval(file, progress) {
       const image = await new Promise((resolve, reject) => {
         const url = URL.createObjectURL(blob);
         const img = new Image();
-        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onload  = () => { URL.revokeObjectURL(url); resolve(img); };
         img.onerror = reject;
-        img.src = url;
+        img.src     = url;
       });
       state.aiError = '';
       logEvent('ai.bg_remove_success', {
-        source: attempt.publicPath,
-        model: attempt.model,
+        source:     attempt.publicPath,
+        model:      attempt.model,
         durationMs: Math.round(performance.now() - startedAt),
       });
       return image;
@@ -282,8 +279,8 @@ export async function runBackgroundRemoval(file, progress) {
       lastError = err instanceof Error ? err.message : `AI fail at ${attempt.publicPath}`;
       logEvent('ai.bg_remove_failed_attempt', {
         source: attempt.publicPath,
-        model: attempt.model,
-        error: lastError,
+        model:  attempt.model,
+        error:  lastError,
       }, 'warn');
     }
   }
