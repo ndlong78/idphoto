@@ -187,6 +187,8 @@ export function initUI(actions) {
       btn.classList.add('active');
       state.curFmt = btn.dataset.fmt;
       computeFrame();
+      fitImage(false);
+      if (state.faceData) centerFace();
       zoomResultFit();
       void safeRender();
       document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
@@ -417,9 +419,15 @@ function zoomResult(dir) {
 }
 
 function zoomResultFit() {
-  state.rv.scale = 1;
-  state.rv.tx    = 0;
-  state.rv.ty    = 0;
+  const fmt  = FMTS[state.curFmt];
+  const wrap = document.getElementById('prev-wrap');
+  const ww   = wrap?.clientWidth  ?? 0;
+  const wh   = wrap?.clientHeight ?? 0;
+  state.rv.scale = (ww > 0 && wh > 0)
+    ? Math.min(1, ww / fmt.w, wh / fmt.h)
+    : 1;
+  state.rv.tx = 0;
+  state.rv.ty = 0;
   applyResultTransform();
 }
 
