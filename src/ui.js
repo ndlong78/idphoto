@@ -6,6 +6,13 @@ import { SKIN_DEBOUNCE_MS, FEATHER_DEBOUNCE_MS } from './constants.js';
 let toastTimer = null;
 let uiController = null;
 
+// FIX [WARNING]: Khai báo debounce timer ở module scope để có thể clear
+// khi initUI() được gọi lại (ví dụ sau resetState()).
+// Nếu không clear, timer cũ có thể fire sau khi state.origImg = null
+// và gây crash trong renderToPreview().
+let skinDebounceTimer    = 0;
+let featherDebounceTimer = 0;
+
 export function getControls() {
   return {
     bright:   document.getElementById('bright'),
@@ -20,6 +27,14 @@ export function initUI(actions) {
   uiController?.abort();
   uiController = new AbortController();
   const { signal } = uiController;
+
+  // FIX [WARNING]: Clear timer cũ trước khi re-bind listener mới.
+  // initUI() có thể được gọi lại sau resetState() — timer cũ vẫn pending
+  // và nếu fire sau khi origImg = null sẽ crash renderToPreview().
+  clearTimeout(skinDebounceTimer);
+  clearTimeout(featherDebounceTimer);
+  skinDebounceTimer    = 0;
+  featherDebounceTimer = 0;
 
   const uploadZone = document.getElementById('upload-zone');
   const fileInput  = document.getElementById('file-input');
@@ -57,7 +72,6 @@ export function initUI(actions) {
   bindClick('btn-result-plus',  () => zoomResult(1),  signal);
   bindClick('btn-result-fit',   () => zoomResultFit(), signal);
 
-  // Scroll zoom & drag cho result panel
   const prevWrap = document.getElementById('prev-wrap');
 
   prevWrap.addEventListener('wheel', (e) => {
@@ -84,16 +98,15 @@ export function initUI(actions) {
 
   window.addEventListener('mouseup', () => { rvDragging = false; }, { signal });
 
-  // Touch pinch-to-zoom & drag cho result panel
   let rvTouchLast = { x: 0, y: 0 };
   let rvPinchLast = 0;
 
   prevWrap.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
-      rvDragging = true;
+      rvDragging  = true;
       rvTouchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     } else if (e.touches.length === 2) {
-      rvDragging = false;
+      rvDragging  = false;
       rvPinchLast = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY,
@@ -109,7 +122,7 @@ export function initUI(actions) {
       rvTouchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       applyResultTransform();
     } else if (e.touches.length === 2 && rvPinchLast > 0) {
-      const d = Math.hypot(
+      const d    = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY,
       );
@@ -126,9 +139,9 @@ export function initUI(actions) {
   prevWrap.addEventListener('touchend', () => { rvDragging = false; rvPinchLast = 0; }, { signal });
 
   bindClick('btn-open-lightbox', () => openLightbox(), signal);
-  bindClick('btn-lb-close',  () => closeLightbox(),   signal);
-  bindClick('btn-lb-minus',  () => lightboxZoom(-1),  signal);
-  bindClick('btn-lb-plus',   () => lightboxZoom(1),   signal);
+  bindClick('btn-lb-close',  () => closeLightbox(),  signal);
+  bindClick('btn-lb-minus',  () => lightboxZoom(-1), signal);
+  bindClick('btn-lb-plus',   () => lightboxZoom(1),  signal);
   bindClick('btn-lb-fit',    () => lightboxZoomFit(), signal);
 
   bindAsyncClick('btn-jpg-600', () => actions.onDownload('jpeg600'), signal);
@@ -137,6 +150,13 @@ export function initUI(actions) {
   bindAsyncClick('btn-copy',    actions.onCopy, signal);
 
   bindClick('btn-reset-app', () => {
+    // FIX [WARNING]: Clear pending debounce timer trước khi reset state.
+    // Nếu không clear, timer có thể fire SAU khi origImg = null.
+    clearTimeout(skinDebounceTimer);
+    clearTimeout(featherDebounceTimer);
+    skinDebounceTimer    = 0;
+    featherDebounceTimer = 0;
+
     cleanupCropEvents();
     resetState();
     document.getElementById('file-input').value = '';
@@ -164,22 +184,6 @@ export function initUI(actions) {
     }, { signal });
   });
 
-  // ── Slider event handlers ────────────────────────────────────────────────
-  //
-  // FIX: Bọc renderToPreview() trong try/catch (safeRender) để lỗi trong
-  // pipeline render (ví dụ: canvas bị detach, state bị corrupt) không trở
-  // thành unhandled rejection và gây im lặng hoàn toàn với user.
-  //
-  // FIX: Thêm debounce cho feather slider.
-  // featherMask() chạy distance transform O(W·H) — đủ nặng để giật
-  // khi kéo nhanh. Dùng FEATHER_DEBOUNCE_MS (150ms) thay vì real-time.
-  //
-  // skin đã được debounce SKIN_DEBOUNCE_MS (250ms) từ trước vì
-  // boxBlurRGB + getImageData/putImageData có thể >50ms.
-
-  let skinDebounceTimer    = 0;
-  let featherDebounceTimer = 0;
-
   [['bright', 'bv'], ['contrast', 'cv'], ['sharp', 'sv'], ['skin', 'skv'], ['feather', 'fv']].forEach(([id, lblId]) => {
     const input = document.getElementById(id);
     input.addEventListener('input', () => {
@@ -197,10 +201,6 @@ export function initUI(actions) {
     }, { signal });
   });
 
-  // FIX: zoom-range max tăng từ 600 lên 2500 để khớp với applyZoom giới hạn 25×.
-  // Phiên bản cũ: sau khi pinch-zoom vượt 600%, slider bị kẹt ở max
-  // và syncZoomUI hiển thị "600%" dù scale thực tế là 700%, 800%...
-  // Thay đổi này cần đồng bộ với thuộc tính max="2500" trong index.html.
   document.getElementById('zoom-range').addEventListener('input', (e) => {
     const value = e.target.valueAsNumber / 100;
     applyZoom(value / state.crop.scale, state.cW / 2, state.cH / 2);
@@ -212,11 +212,7 @@ export function initUI(actions) {
   setSection('upload');
 }
 
-// ─── Safe render wrapper ─────────────────────────────────────────────────────
-//
-// Bọc renderToPreview() trong try/catch để lỗi trong pipeline render
-// (ví dụ canvas detach, state corrupt) được hiển thị qua toast thay vì
-// im lặng hoàn toàn hoặc crash unhandled.
+// ─── Safe render ──────────────────────────────────────────────────────────────
 
 async function safeRender() {
   try {
@@ -227,7 +223,7 @@ async function safeRender() {
   }
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function bindClick(id, fn, signal) {
   const el = document.getElementById(id);
@@ -270,7 +266,7 @@ export function setSteps(active) {
   for (let i = 1; i <= 4; i++) {
     const el = document.getElementById(`s${i}`);
     el.className = 'step';
-    if (i < active)      el.classList.add('done');
+    if (i < active)       el.classList.add('done');
     else if (i === active) el.classList.add('active');
   }
 }
@@ -293,10 +289,10 @@ export function setFaceStatus(score) {
   const bar = document.getElementById('face-bar');
   const txt = document.getElementById('face-txt');
   if (score !== null) {
-    bar.className  = 'fstatus ok';
+    bar.className   = 'fstatus ok';
     txt.textContent = `Nhận dạng khuôn mặt (${Math.round(score * 100)}%)`;
   } else {
-    bar.className  = 'fstatus warn';
+    bar.className   = 'fstatus warn';
     txt.textContent = 'Không tìm thấy khuôn mặt — căn giữa tự động';
   }
 }
@@ -337,19 +333,10 @@ export function toast(message, type = 'ok') {
   toastTimer = window.setTimeout(() => { el.className = ''; }, 3500);
 }
 
-/**
- * Cập nhật thanh zoom slider và nhãn % theo state.crop.scale hiện tại.
- *
- * FIX: Phiên bản cũ clamp slider value về max 600 (= 600%).
- * applyZoom cho phép scale tới 25× (2500%) qua pinch gesture.
- * Sau khi pinch vượt 600%, slider "kẹt" ở max, hiển thị 600% dù thực tế 1200%.
- * Nâng clamp lên 2500 để khớp với giới hạn trong applyZoom.
- * Cần đồng bộ thuộc tính max="2500" trên <input id="zoom-range"> trong index.html.
- */
 export function syncZoomUI() {
   const percent = Math.round(state.crop.scale * 100);
-  document.getElementById('zoom-lbl').textContent   = `${percent}%`;
-  document.getElementById('zoom-range').value        = `${Math.max(5, Math.min(2500, percent))}`;
+  document.getElementById('zoom-lbl').textContent = `${percent}%`;
+  document.getElementById('zoom-range').value      = `${Math.max(5, Math.min(2500, percent))}`;
 }
 
 // ─── Result panel zoom ────────────────────────────────────────────────────────
@@ -429,23 +416,14 @@ function applyLightboxTransform() {
 }
 
 // ─── Download ─────────────────────────────────────────────────────────────────
-//
-// FIX: Tính targetDpi và scale từ fmt.dpi thay vì hardcode 300/600.
-// Nếu sau này thêm format với dpi khác (ví dụ 200 DPI cho web),
-// filename và kích thước xuất sẽ vẫn đúng tự động.
-//
-// mode → targetDpi:
-//   'jpeg300' → baseDpi      (scale = 1)
-//   'jpeg600' → baseDpi × 2  (scale = 2)
-//   'png600'  → baseDpi × 2  (scale = 2)
 
 export async function download(mode) {
-  const fmt     = FMTS[state.curFmt];
-  const baseDpi = fmt.dpi;
+  const fmt       = FMTS[state.curFmt];
+  const baseDpi   = fmt.dpi;
   const targetDpi = mode === 'jpeg300' ? baseDpi : baseDpi * 2;
-  const scale     = targetDpi / baseDpi;   // 1 hoặc 2
-  const ext  = mode.includes('png') ? 'png'      : 'jpeg';
-  const mime = ext === 'png'        ? 'image/png' : 'image/jpeg';
+  const scale     = targetDpi / baseDpi;
+  const ext  = mode.includes('png') ? 'png'       : 'jpeg';
+  const mime = ext === 'png'        ? 'image/png'  : 'image/jpeg';
 
   const hiRes = await renderResult(scale);
   const link  = document.createElement('a');
@@ -454,21 +432,6 @@ export async function download(mode) {
   link.click();
 }
 
-/**
- * Sao chép ảnh kết quả vào clipboard.
- *
- * FIX: Phiên bản cũ throw khi ClipboardItem API không được hỗ trợ
- * (Firefox < 127, HTTP context không có HTTPS, thiếu user gesture),
- * khiến caller nhận reject và hiển thị toast lỗi — user mất ảnh.
- *
- * Fix: bổ sung fallback tự động mở blob URL trong tab mới.
- * User có thể nhấn chuột phải → Lưu ảnh mà không mất dữ liệu.
- * Trả về { method: 'clipboard' | 'newtab' } thay vì void để caller
- * hiển thị toast message phù hợp với từng trường hợp.
- *
- * Blob URL được revoke sau 60s để tránh memory leak — đủ thời gian
- * để user thực hiện thao tác lưu trên tab mới.
- */
 export async function copyToClipboard() {
   const canvas = document.getElementById('result-canvas');
   const blob = await new Promise((resolve, reject) => {
@@ -479,8 +442,6 @@ export async function copyToClipboard() {
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     return { method: 'clipboard' };
   } catch {
-    // Fallback: mở blob URL trong tab mới để user có thể nhấn chuột phải → Lưu ảnh.
-    // Không re-throw — đây là degraded-but-functional path, không phải failure.
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
@@ -491,7 +452,4 @@ export async function copyToClipboard() {
 export function mountEditor() {
   setSection('editor');
   initCrop();
-  // Không gọi renderToPreview() ở đây — caller (processFile) sẽ await
-  // một lần duy nhất sau khi mountEditor() trả về, tránh hai render
-  // chạy song song do void fire-and-forget + await.
 }
