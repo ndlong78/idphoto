@@ -72,3 +72,8 @@ test('validateImageFile: chấp nhận khi mime hợp lệ dù extension lạ', 
   const file = new File([new Uint8Array(100)], 'image_upload', { type: 'image/jpeg' });
   assert.deepEqual(validateImageFile(file), { ok: true });
 });
+
+test('validateImageFile: từ chối mime image/svg+xml dù bắt đầu bằng image/', () => {
+  const file = new File(['<svg></svg>'], 'vector.svg', { type: 'image/svg+xml' });
+  assert.equal(validateImageFile(file).ok, false);
+});

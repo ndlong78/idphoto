@@ -2,6 +2,7 @@ import { applyZoom, centerFace, cleanupCropEvents, computeFrame, fitImage, initC
 import { renderResult, renderToPreview } from './render.js';
 import { FMTS, resetState, state } from './state.js';
 import { SKIN_DEBOUNCE_MS, FEATHER_DEBOUNCE_MS, SHADOW_DEBOUNCE_MS } from './constants.js';
+import { logEvent } from './telemetry.js';
 
 let toastTimer = null;
 let uiController = null;
@@ -267,6 +268,10 @@ function bindAsyncClick(id, fn, signal) {
     el.disabled = true;
     try {
       await fn();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Lỗi thao tác không xác định';
+      logEvent('ui.async_action_failed', { id, error: message }, 'error');
+      toast(`⚠️ ${message}`, 'err');
     } finally {
       el.disabled = false;
     }
