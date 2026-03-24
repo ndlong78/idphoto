@@ -41,15 +41,15 @@ function saveBuffer(events) {
 }
 
 const baseContext = {
-  app: 'idphoto-mvp',
+  app:     'idphoto-mvp',
   version: '0.2.0',
 };
 
 let runtimeContext = {
-  userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
-  platform: typeof navigator !== 'undefined' ? navigator.platform : 'unknown',
-  language: typeof navigator !== 'undefined' ? navigator.language : 'unknown',
-  deviceMemory: typeof navigator !== 'undefined' ? navigator.deviceMemory ?? null : null,
+  userAgent:           typeof navigator !== 'undefined' ? navigator.userAgent   : 'unknown',
+  platform:            typeof navigator !== 'undefined' ? navigator.platform    : 'unknown',
+  language:            typeof navigator !== 'undefined' ? navigator.language    : 'unknown',
+  deviceMemory:        typeof navigator !== 'undefined' ? navigator.deviceMemory        ?? null : null,
   hardwareConcurrency: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency ?? null : null,
 };
 
@@ -57,11 +57,35 @@ export function setTelemetryContext(context = {}) {
   runtimeContext = { ...runtimeContext, ...context };
 }
 
+// FIX [WARNING]: runtimeContext chứa các trường fingerprinting
+// (userAgent, platform, deviceMemory, hardwareConcurrency) — được ghi vào
+// localStorage cho MỌI event. Sau khi user xóa ảnh, fingerprint vẫn tồn tại.
+//
+// Giải pháp: tách context thành hai phần:
+//   - localContext: chỉ lưu type/level/payload (không có fingerprint)
+//   - fullContext:  gửi lên endpoint (nếu có) kèm fingerprint đầy đủ
+//
+// Khi không có endpoint được cấu hình, fingerprint không cần lưu local.
+
+/** Trả về phần context an toàn để lưu localStorage (không fingerprint). */
+function buildLocalContext() {
+  return {
+    ...baseContext,
+    // Chỉ giữ page và timezone từ runtimeContext — không có UA, platform, memory
+    ...(runtimeContext.page     ? { page:     runtimeContext.page }     : {}),
+    ...(runtimeContext.timezone ? { timezone: runtimeContext.timezone } : {}),
+  };
+}
+
+/** Trả về full context để gửi lên endpoint (nếu có). */
+function buildFullContext() {
+  return { ...baseContext, ...runtimeContext };
+}
+
 function sendToEndpoint(event) {
   const endpoint = globalThis?.__IDPHOTO_CONFIG__?.telemetryEndpoint;
   if (!endpoint || typeof endpoint !== 'string') return;
 
-  // Chỉ gửi POST, best-effort, không block UI.
   try {
     const body = JSON.stringify(event);
     if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
@@ -72,8 +96,8 @@ function sendToEndpoint(event) {
 
     if (typeof fetch === 'function') {
       void fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method:    'POST',
+        headers:   { 'Content-Type': 'application/json' },
         body,
         keepalive: true,
       });
@@ -91,38 +115,44 @@ function resolveConsoleLevel() {
 }
 
 function shouldLogToConsole(level) {
-  const wanted = resolveConsoleLevel();
-  const eventRank = LOG_LEVEL_RANK[level] ?? LOG_LEVEL_RANK.info;
+  const wanted     = resolveConsoleLevel();
+  const eventRank  = LOG_LEVEL_RANK[level]  ?? LOG_LEVEL_RANK.info;
   const wantedRank = LOG_LEVEL_RANK[wanted] ?? LOG_LEVEL_RANK.error;
   return eventRank <= wantedRank;
 }
 
 export function logEvent(type, payload = {}, level = 'info') {
-  const event = {
-    id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  const id = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  // Event lưu localStorage: dùng localContext (không fingerprint)
+  const localEvent = {
+    id,
     type,
     level,
-    ts: nowIso(),
-    context: { ...baseContext, ...runtimeContext },
+    ts:      nowIso(),
+    context: buildLocalContext(),
     payload,
   };
 
   const events = loadBuffer();
-  events.push(event);
+  events.push(localEvent);
   saveBuffer(events);
 
   if (shouldLogToConsole(level)) {
-    if (level === 'error') {
-      console.error('[telemetry]', event);
-    } else if (level === 'warn') {
-      console.warn('[telemetry]', event);
-    } else {
-      console.info('[telemetry]', event);
-    }
+    if (level === 'error')      console.error('[telemetry]', localEvent);
+    else if (level === 'warn')  console.warn('[telemetry]',  localEvent);
+    else                        console.info('[telemetry]',  localEvent);
   }
 
-  sendToEndpoint(event);
-  return event;
+  // Gửi endpoint: dùng fullContext (kèm fingerprint) — chỉ khi có endpoint
+  const hasEndpoint = typeof globalThis?.__IDPHOTO_CONFIG__?.telemetryEndpoint === 'string';
+  if (hasEndpoint) {
+    const fullEvent = { ...localEvent, context: buildFullContext() };
+    sendToEndpoint(fullEvent);
+  }
+
+  return localEvent;
 }
 
 export function getTelemetryEvents() {
