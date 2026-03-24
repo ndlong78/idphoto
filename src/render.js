@@ -7,18 +7,21 @@ import {
 } from './constants.js';
 
 // ─── Canvas reuse ─────────────────────────────────────────────────────────────
-//
-// Thay vì createElement('canvas') mỗi lần renderResult() được gọi
-// (gây áp lực GC liên tục khi user kéo slider), ta giữ lại hai canvas:
-//   _outCanvas  — canvas đầu ra chính (trả về cho caller)
-//   _maskCanvas — canvas nội bộ để composite AI mask
-//
-// An toàn vì JS single-thread: không bao giờ có hai renderResult() chạy
-// song song thực sự. Các caller gọi toDataURL() hoặc drawImage() đồng bộ
-// ngay sau khi nhận canvas, trước khi render tiếp theo xảy ra.
-// ─────────────────────────────────────────────────────────────────────────────
 let _outCanvas  = null;
 let _maskCanvas = null;
+
+// ─── Blur buffer reuse ────────────────────────────────────────────────────────
+// FIX [SUGGESTION]: Tái sử dụng Float32Array thay vì cấp phát mới mỗi render.
+// Với ảnh 600DPI (1200×1200), mỗi array ~5.5MB — gọi 2 lần/render gây GC pressure.
+let _blurTmp = null;
+let _blurOut = null;
+
+// ─── Render lock ──────────────────────────────────────────────────────────────
+// FIX [CRITICAL]: Ngăn race condition khi renderToPreview() được gọi đồng thời
+// từ nhiều nguồn (slider debounce + drag + format change).
+// await bên trong renderResult() nhường event loop → hai microtask có thể
+// chạy xen kẽ và ghi đồng thời lên cùng _outCanvas/_maskCanvas.
+let _renderLock = false;
 
 /** Lấy canvas tái sử dụng với kích thước mong muốn */
 function getCanvas(store, w, h) {
@@ -31,13 +34,7 @@ function getCanvas(store, w, h) {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Render ảnh kết quả ở tỉ lệ scale.
- *
- * Được khai báo async để API nhất quán với các caller đã dùng await,
- * và dễ nâng cấp lên OffscreenCanvas + Worker trong tương lai mà không
- * cần thay đổi signature ở caller.
- *
- * @param {number} [scale=1] - 1 = preview/300DPI, 2 = export/600DPI
+ * @param {number} [scale=1]
  * @returns {Promise<HTMLCanvasElement>}
  */
 export async function renderResult(scale = 1) {
@@ -64,9 +61,6 @@ export async function renderResult(scale = 1) {
       mctx.drawImage(state.aiMaskImg, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
       const maskData = mctx.getImageData(0, 0, w, h);
 
-      // FIX: Feather dùng binary mask riêng để chạy distance transform,
-      // sau đó NHÂN (không thay thế) alpha gốc ISNet với hệ số feather.
-      // Pixel tóc alpha=50 × hệ số 0.8 = 40 — smooth edge của ISNet được giữ nguyên.
       const featherRadius = getControls().feather.valueAsNumber;
       if (featherRadius > 0) {
         const binaryMask = new Uint8Array(w * h);
@@ -80,11 +74,9 @@ export async function renderResult(scale = 1) {
         }
       }
 
-      // AI mask: alpha cao = foreground (giữ lại pixel ảnh gốc)
       blendAiAlpha(imageData.data, maskData.data, bg);
     }
   } else {
-    // Flood fill mask: giá trị cao = background (thay bằng màu nền)
     const mask = floodFill(imageData, FLOOD_FILL_TOLERANCE);
     featherMask(mask, w, h, getControls().feather.valueAsNumber);
     applyFloodFillAlpha(imageData.data, mask, bg);
@@ -96,27 +88,37 @@ export async function renderResult(scale = 1) {
 }
 
 export async function renderToPreview() {
-  const preview = document.getElementById('result-canvas');
-  const output  = await renderResult(1);
-  preview.width  = output.width;
-  preview.height = output.height;
-  preview.getContext('2d')?.drawImage(output, 0, 0);
+  // FIX [CRITICAL]: Lock để tránh hai render chạy đồng thời trên shared canvas.
+  // Nếu đang render, bỏ qua request mới thay vì để chúng xen kẽ nhau.
+  if (_renderLock) return;
+  _renderLock = true;
+  try {
+    const preview = document.getElementById('result-canvas');
+    const output  = await renderResult(1);
+    preview.width  = output.width;
+    preview.height = output.height;
+    preview.getContext('2d')?.drawImage(output, 0, 0);
+  } finally {
+    _renderLock = false;
+  }
 }
 
 // ─── Crop geometry ────────────────────────────────────────────────────────────
 
 /**
- * Tính toạ độ vùng cắt từ canvas crop sang toạ độ ảnh gốc.
- *
- * Guard: nếu scale ≤ 0 (state bị corrupt hoặc chưa khởi tạo),
- * trả về toàn bộ frame để tránh division-by-zero gây Infinity/NaN
- * lan sang getImageData và tạo canvas kích thước vô hạn.
+ * FIX [WARNING]: Fallback cũ trả về state.frame.w/h (pixel màn hình) như
+ * tọa độ ảnh gốc → render sai vùng ảnh.
+ * Fallback đúng là toàn bộ ảnh gốc.
  */
 function getCropRect() {
   const s = state.crop.scale;
   if (!s || s <= 0) {
-    // Fallback an toàn — trả về vùng frame không scaled
-    return { x: 0, y: 0, w: state.frame.w || 1, h: state.frame.h || 1 };
+    return {
+      x: 0,
+      y: 0,
+      w: state.origImg ? state.origImg.width  : 1,
+      h: state.origImg ? state.origImg.height : 1,
+    };
   }
   return {
     x: (state.frame.x - state.crop.x) / s,
@@ -127,18 +129,7 @@ function getCropRect() {
 }
 
 // ─── Mask blending ────────────────────────────────────────────────────────────
-//
-// Chú ý: hai hàm dưới đây có ngữ nghĩa NGƯỢC NHAU.
-// Đặt tên rõ ràng để tránh nhầm lẫn khi maintain:
-//
-//   blendAiAlpha       — alpha cao = FOREGROUND (giữ pixel ảnh)
-//   applyFloodFillAlpha — giá trị cao = BACKGROUND (thay bằng màu nền)
 
-/**
- * Blend AI mask vào ảnh.
- * alpha=255 tại pixel [i] → pixel ảnh gốc được giữ nguyên 100%.
- * alpha=0   tại pixel [i] → pixel được thay hoàn toàn bằng màu nền.
- */
 function blendAiAlpha(data, mask, bg) {
   for (let i = 0; i < data.length; i += 4) {
     const alpha = mask[i + 3] / 255;
@@ -149,13 +140,6 @@ function blendAiAlpha(data, mask, bg) {
   }
 }
 
-/**
- * Áp dụng flood fill mask vào ảnh.
- * mask[i]=255 → pixel là nền → thay bằng bg.
- * mask[i]=0   → pixel là foreground → giữ nguyên.
- *
- * Alpha là mức độ thay thế (0 = giữ nguyên, 255 = thay hoàn toàn).
- */
 function applyFloodFillAlpha(data, mask, bg) {
   for (let i = 0; i < mask.length; i++) {
     if (mask[i] === 0) continue;
@@ -177,7 +161,6 @@ function applyAdjustments(imageData) {
   const sk = skin.valueAsNumber;
   const d  = imageData.data;
 
-  // 1. Brightness & contrast (formula Photoshop-compatible)
   const factor = (259 * (c + 255)) / (255 * (259 - c));
   for (let i = 0; i < d.length; i += 4) {
     d[i]     = clamp(factor * (d[i]     - 128) + 128 + b);
@@ -185,22 +168,12 @@ function applyAdjustments(imageData) {
     d[i + 2] = clamp(factor * (d[i + 2] - 128) + 128 + b);
   }
 
-  // 2. Skin smoothing (frequency separation — chạy trước sharpening)
   if (sk > 0) applySkinSmoothing(imageData, sk);
-
-  // 3. Unsharp mask (tăng nét sau khi làm mịn)
-  if (s > 0) unsharpMask(imageData, 1.2, s * 1.2);
+  if (s > 0)  unsharpMask(imageData, 1.2, s * 1.2);
 }
 
-// ─── Unsharp mask (separable) ─────────────────────────────────────────────────
-//
-// FIX PERFORMANCE: Phiên bản cũ dùng nested loop O(W·H·(2r+1)²).
-// Phiên bản mới tái dùng boxBlurRGB (đã separable 2-pass, O(W·H·r)):
-//   unsharp = original + (original − blurred) × amount
-//
-// Kết quả giống nhau về mặt thị giác vì box blur xấp xỉ Gaussian đủ tốt
-// cho unsharp mask. Tốc độ cải thiện ~(2r+1)× trên ảnh lớn.
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Unsharp mask ─────────────────────────────────────────────────────────────
+
 function unsharpMask(imageData, radius, amount) {
   const { width, height, data } = imageData;
   const r       = Math.max(1, Math.round(radius));
@@ -250,13 +223,7 @@ function floodFill(imgData, tol) {
   return mask;
 }
 
-// ─── Feather mask (distance transform rút gọn) ───────────────────────────────
-//
-// Với mỗi pixel foreground gần biên, tính khoảng cách Manhattan đến
-// pixel background gần nhất (hai lượt quét TL→BR và BR→TL).
-// Alpha = clamp(dist / radius, 0, 1) → gradient mịn 0→255.
-//
-// Export để test có thể kiểm tra trực tiếp.
+// ─── Feather mask ─────────────────────────────────────────────────────────────
 
 export function featherMask(mask, W, H, radius) {
   if (radius <= 0) return;
@@ -266,7 +233,6 @@ export function featherMask(mask, W, H, radius) {
     if (mask[i] === 0) dist[i] = 0;
   }
 
-  // Pass 1: top-left → bottom-right
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = y * W + x;
@@ -278,13 +244,12 @@ export function featherMask(mask, W, H, radius) {
     }
   }
 
-  // Pass 2: bottom-right → top-left
   for (let y = H - 1; y >= 0; y--) {
     for (let x = W - 1; x >= 0; x--) {
       const i = y * W + x;
       if (mask[i] === 0) continue;
-      if (x < W-1)           dist[i] = Math.min(dist[i], dist[i + 1]     + 1);
-      if (y < H-1)           dist[i] = Math.min(dist[i], dist[i + W]     + 1);
+      if (x < W-1)             dist[i] = Math.min(dist[i], dist[i + 1]     + 1);
+      if (y < H-1)             dist[i] = Math.min(dist[i], dist[i + W]     + 1);
       if (x < W-1 && y < H-1) dist[i] = Math.min(dist[i], dist[i + W + 1] + 1.414);
       if (x > 0   && y < H-1) dist[i] = Math.min(dist[i], dist[i + W - 1] + 1.414);
     }
@@ -315,10 +280,6 @@ function sampleBackground(data, W, H) {
   };
 }
 
-/**
- * Color distance có trọng số luma (Euclidean sRGB).
- * Export để test kiểm tra ngưỡng FLOOD_FILL_TOLERANCE.
- */
 export function colorDistance(a, b) {
   return Math.sqrt(
     (a.r - b.r) ** 2 * 0.299 +
@@ -327,16 +288,7 @@ export function colorDistance(a, b) {
   );
 }
 
-// ─── Skin smoothing (Frequency Separation) ───────────────────────────────────
-//
-// Chiến lược:
-//   1. Tạo lớp low-frequency (box blur) của toàn ảnh.
-//   2. Với mỗi pixel da, blend pixel gốc với lớp blurred.
-//      → Làm phẳng màu sắc (low-freq) nhưng giữ lại một phần kết cấu.
-//   3. Sharpening chạy SAU để phục hồi cạnh mắt, tóc, môi.
-//
-// Skin detection từ chối: nền trắng/xám, tóc tối, mắt tối,
-// môi đỏ bão hòa cao, vùng lạnh/xanh.
+// ─── Skin smoothing ───────────────────────────────────────────────────────────
 
 function applySkinSmoothing(imageData, amount) {
   if (amount <= 0) return;
@@ -354,34 +306,30 @@ function applySkinSmoothing(imageData, amount) {
   }
 }
 
-/**
- * Nhận diện màu da — bao phủ từ da nhợt đến da ngăm đậm.
- * Export để test có thể kiểm tra các trường hợp biên.
- *
- * @param {number} r - Red channel [0–255]
- * @param {number} g - Green channel [0–255]
- * @param {number} b - Blue channel [0–255]
- * @returns {boolean}
- */
 export function isSkinPixel(r, g, b) {
-  if (r < 60 || r > 248) return false;                             // quá tối (tóc/mắt) hoặc quá sáng (nền)
-  if (r <= g || r <= b) return false;                              // R phải chiếm ưu thế (ấm)
-  if (r - Math.min(g, b) < 20) return false;                      // phải có sắc ấm đủ mạnh
-  if (Math.max(r, g, b) - Math.min(r, g, b) < 15) return false;  // không phải xám đều
-  if (b > g) return false;                                         // loại màu lạnh/xanh
-  if (r > 200 && (r - g) > 80) return false;                      // loại môi/má đỏ bão hòa
+  if (r < 60 || r > 248) return false;
+  if (r <= g || r <= b) return false;
+  if (r - Math.min(g, b) < 20) return false;
+  if (Math.max(r, g, b) - Math.min(r, g, b) < 15) return false;
+  if (b > g) return false;
+  if (r > 200 && (r - g) > 80) return false;
   return true;
 }
 
-// ─── Box blur (separable H+V pass) ───────────────────────────────────────────
-//
-// O(W·H·r) — dùng cho cả skin smoothing và unsharpMask.
+// ─── Box blur (separable) — với buffer reuse ──────────────────────────────────
 
 function boxBlurRGB(src, W, H, r) {
-  const tmp = new Float32Array(src.length);
-  const out = new Float32Array(src.length);
+  const len = src.length;
 
-  // Horizontal pass: src → tmp
+  // FIX [SUGGESTION]: Tái sử dụng buffer nếu đủ kích thước,
+  // tránh cấp phát ~5.5MB × 2 mỗi lần render ảnh 600DPI.
+  if (!_blurTmp || _blurTmp.length < len) _blurTmp = new Float32Array(len);
+  if (!_blurOut || _blurOut.length < len) _blurOut = new Float32Array(len);
+
+  const tmp = _blurTmp;
+  const out = _blurOut;
+
+  // Horizontal pass
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       let rs = 0, gs = 0, bs = 0, n = 0;
@@ -395,7 +343,7 @@ function boxBlurRGB(src, W, H, r) {
     }
   }
 
-  // Vertical pass: tmp → out
+  // Vertical pass
   for (let x = 0; x < W; x++) {
     for (let y = 0; y < H; y++) {
       let rs = 0, gs = 0, bs = 0, n = 0;
@@ -414,17 +362,8 @@ function boxBlurRGB(src, W, H, r) {
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
-/**
- * Clamp giá trị về [0, 255] và làm tròn thành số nguyên.
- * Xử lý NaN → 0 để tránh pixel bị corrupt khi phép tính số học bị lỗi.
- * Export để test đường biên.
- *
- * Tại sao không dùng Math.max/Math.min:
- *   Math.max(0, NaN) = NaN — không giúp ích gì.
- * Trick !(r > 0): NaN > 0 = false → !(false) = true → trả 0. ✓
- */
 export function clamp(v) {
   const r = Math.round(v);
-  if (!(r > 0)) return 0;   // xử lý NaN, âm, 0
+  if (!(r > 0)) return 0;
   return r > 255 ? 255 : r;
 }
