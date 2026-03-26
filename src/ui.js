@@ -16,22 +16,6 @@ let featherDebounceTimer = 0;
 let shadowDebounceTimer  = 0;
 
 /**
- * Trả về object chứa các HTMLInputElement của thanh điều chỉnh ảnh.
- *
- * @returns {{bright: HTMLElement, contrast: HTMLElement, sharp: HTMLElement, skin: HTMLElement, feather: HTMLElement, shadow: HTMLElement}}
- */
-export function getControls() {
-  return {
-    bright:   document.getElementById('bright'),
-    contrast: document.getElementById('contrast'),
-    sharp:    document.getElementById('sharp'),
-    skin:     document.getElementById('skin'),
-    feather:  document.getElementById('feather'),
-    shadow:   document.getElementById('shadow'),
-  };
-}
-
-/**
  * Khởi tạo toàn bộ event listener của UI. Có thể gọi lại sau resetState().
  * Clear timer debounce cũ trước khi bind để tránh stale callback.
  *

@@ -24,6 +24,7 @@ let faceModelsReady = false;
 // Fix: _triedScriptUrls lưu URL đã inject. Dù promise có bị reset,
 // các URL đã thử sẽ bị skip ngay — không re-inject, không vòng lặp.
 const _triedScriptUrls = new Set();
+const BG_REMOVAL_VERSION = '1.5.5';
 
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
 const FACE_API_SCRIPT_SOURCES = [
@@ -31,13 +32,33 @@ const FACE_API_SCRIPT_SOURCES = [
 ];
 
 const BG_REMOVAL_MODULE_SOURCES = [
-  'https://esm.sh/@imgly/background-removal@1.5.5?bundle',
-  'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/dist/index.mjs',
+  `https://esm.sh/@imgly/background-removal@${BG_REMOVAL_VERSION}?bundle`,
+  `https://cdn.jsdelivr.net/npm/@imgly/background-removal@${BG_REMOVAL_VERSION}/dist/index.mjs`,
 ];
 
 const BG_REMOVAL_DATA_SOURCES = [
-  { publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/', model: 'isnet_fp16' },
+  { publicPath: `https://staticimgly.com/@imgly/background-removal-data/${BG_REMOVAL_VERSION}/dist/`, model: 'isnet_fp16' },
 ];
+
+/**
+ * Validate version pinning cho tất cả CDN source liên quan background removal.
+ * Fail-fast ở load time để tránh drift runtime giữa module URL và model data URL.
+ */
+export function validateAiSourceVersions() {
+  for (const url of BG_REMOVAL_MODULE_SOURCES) {
+    if (!url.includes(`@${BG_REMOVAL_VERSION}`)) {
+      throw new Error(`BG_REMOVAL_MODULE_SOURCES phải pin @${BG_REMOVAL_VERSION}: ${url}`);
+    }
+  }
+
+  for (const source of BG_REMOVAL_DATA_SOURCES) {
+    if (!source.publicPath.includes(`/${BG_REMOVAL_VERSION}/`)) {
+      throw new Error(`BG_REMOVAL_DATA_SOURCES phải pin /${BG_REMOVAL_VERSION}/: ${source.publicPath}`);
+    }
+  }
+}
+
+validateAiSourceVersions();
 
 function withTimeout(promise, ms, message) {
   let timerId;
