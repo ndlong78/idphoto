@@ -1,6 +1,6 @@
 import { FMTS, state } from './state.js';
 import { renderToPreview } from './render.js';
-import { syncZoomUI } from './ui.js';
+import { syncZoomUI } from './dom.js';
 import {
   CROP_FIT_MARGIN,
   CROP_FIT_MAX_SCALE,
@@ -130,8 +130,7 @@ export function cleanupCropEvents() {
 }
 
 /**
- * Tính toán và cập nhật state.frame — vùng frame ID photo trên crop canvas,
- * giữ đúng tỉ lệ khung (aspect ratio) theo định dạng hiện tại.
+ * Tính toán và cập nhật state.frame.
  */
 export function computeFrame() {
   const fmt = FMTS[state.curFmt];
@@ -154,11 +153,6 @@ export function computeFrame() {
 /**
  * Fit ảnh gốc vào canvas crop.
  *
- * Clamp scale về [eps, CROP_FIT_MAX_SCALE]:
- *   - eps tránh scale = 0 gây division-by-zero trong getCropRect
- *   - CROP_FIT_MAX_SCALE ngăn ảnh thumbnail (50×50) bị zoom cực kỳ lớn
- *     khi fit vào canvas 500px, làm mất kiểm soát crop
- *
  * @param {boolean} rerender - true để trigger renderToPreview ngay sau
  */
 export function fitImage(rerender) {
@@ -178,9 +172,7 @@ export function fitImage(rerender) {
 }
 
 /**
- * Tự động căn chỉnh frame để khuôn mặt nằm đúng vị trí chuẩn hộ chiếu:
- *   - Mặt chiếm CROP_FACE_SCALE_FACTOR (65%) chiều cao frame
- *   - Tâm mặt nằm ở CROP_FACE_VERTICAL_BIAS (37%) từ trên frame
+ * Tự động căn chỉnh frame để khuôn mặt nằm đúng vị trí chuẩn hộ chiếu.
  */
 export function centerFace() {
   if (!state.faceData) return;
@@ -193,13 +185,11 @@ export function centerFace() {
 }
 
 /**
- * Zoom ảnh theo hệ số factor, tâm zoom tại điểm (px, py) trên crop canvas.
- * Scale được clamp về [0.04, 25] để tránh zoom quá mức.
- * Tự động trigger renderToPreview().
+ * Zoom ảnh theo hệ số factor, tâm zoom tại điểm (px, py).
  *
- * @param {number} factor - Hệ số zoom (> 1 = phóng to, < 1 = thu nhỏ)
- * @param {number} px - Tọa độ x tâm zoom (CSS pixel)
- * @param {number} py - Tọa độ y tâm zoom (CSS pixel)
+ * @param {number} factor
+ * @param {number} px
+ * @param {number} py
  */
 export function applyZoom(factor, px, py) {
   const ns = Math.max(0.04, Math.min(25, state.crop.scale * factor));
@@ -219,13 +209,10 @@ function drawCrop() {
 
   const dpr = window.devicePixelRatio || 1;
 
-  // Dùng setTransform() thay vì save/scale/restore để tránh tích lũy transform
-  // qua nhiều frame (gây hiệu ứng "deck of cards" khi state bị stale).
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // Checker background
   const ts = 11;
   for (let y = 0; y < state.cH; y += ts) {
     for (let x = 0; x < state.cW; x += ts) {
