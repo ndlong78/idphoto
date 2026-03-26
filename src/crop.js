@@ -23,6 +23,9 @@ export function initCrop() {
   const canvas = document.getElementById('crop-canvas');
   if (!canvas || !state.origImg) return;
 
+  // cleanupCropEvents() huỷ animation loop cũ (cancelAnimationFrame + animId = null)
+  // và abort toàn bộ event listener qua AbortController.
+  // Đây là điểm duy nhất cần cancel animId — không cần cancel lại bên dưới.
   cleanupCropEvents();
   cropController = new AbortController();
   const { signal } = cropController;
@@ -103,7 +106,8 @@ export function initCrop() {
 
   canvas.addEventListener('touchend', () => { dragging = false; lastPinch = 0; }, { signal });
 
-  if (animId) cancelAnimationFrame(animId);
+  // animId đã được set null bởi cleanupCropEvents() ở trên.
+  // Bắt đầu loop mới — mỗi frame chỉ vẽ lại khi needDraw = true (dirty flag).
   const loop = () => {
     if (needDraw) {
       drawCrop();
