@@ -412,15 +412,6 @@ export function toast(message, type = 'ok') {
   toastTimer = window.setTimeout(() => { el.className = ''; }, 3500);
 }
 
-/**
- * Đồng bộ label % zoom và thanh range slider từ state.crop.scale.
- */
-export function syncZoomUI() {
-  const percent = Math.round(state.crop.scale * 100);
-  document.getElementById('zoom-lbl').textContent = `${percent}%`;
-  document.getElementById('zoom-range').value      = `${Math.max(5, Math.min(2500, percent))}`;
-}
-
 // ─── Result panel zoom ────────────────────────────────────────────────────────
 
 function zoomResult(dir) {
