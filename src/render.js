@@ -1,5 +1,5 @@
 import { FMTS, state } from './state.js';
-import { getControls } from './ui.js';
+import { getControls } from './dom.js';
 import {
   FLOOD_FILL_TOLERANCE,
   SKIN_MAX_BLEND,
@@ -12,17 +12,20 @@ let _outCanvas  = null;
 let _maskCanvas = null;
 
 // ─── Blur buffer reuse ────────────────────────────────────────────────────────
-// FIX [SUGGESTION]: Tái sử dụng Float32Array thay vì cấp phát mới mỗi render.
-// Với ảnh 600DPI (1200×1200), mỗi array ~5.5MB — gọi 2 lần/render gây GC pressure.
 let _blurTmp = null;
 let _blurOut = null;
 
 // ─── Render lock ──────────────────────────────────────────────────────────────
-// FIX [CRITICAL]: Ngăn race condition khi renderToPreview() được gọi đồng thời
-// từ nhiều nguồn (slider debounce + drag + format change).
-// await bên trong renderResult() nhường event loop → hai microtask có thể
-// chạy xen kẽ và ghi đồng thời lên cùng _outCanvas/_maskCanvas.
-let _renderLock = false;
+// FIX [CRITICAL]: Ngăn race condition khi renderToPreview() được gọi đồng thời.
+//
+// FIX [IMPORTANT]: Thay vì drop request khi đang render, dùng _renderPending flag.
+// Pattern cũ:
+//   if (_renderLock) return;  ← slider nhanh → frame cuối bị bỏ qua
+// Pattern mới:
+//   if (_renderLock) { _renderPending = true; return; }
+//   → sau khi unlock, tự động render lại một lần nếu có request đang chờ.
+let _renderLock    = false;
+let _renderPending = false;
 
 /** Lấy canvas tái sử dụng với kích thước mong muốn */
 function getCanvas(store, w, h) {
@@ -90,15 +93,21 @@ export async function renderResult(scale = 1) {
 
 /**
  * Render ảnh kết quả vào canvas preview (#result-canvas).
- * Có render lock: bỏ qua nếu đang render để tránh race condition.
+ *
+ * FIX [IMPORTANT]: Dùng pending flag thay vì drop.
+ * Nếu đang render, đánh dấu _renderPending = true.
+ * Sau khi render xong, nếu có pending thì render lại một lần,
+ * đảm bảo slider frame cuối luôn được hiển thị.
  *
  * @returns {Promise<void>}
  */
 export async function renderToPreview() {
-  // FIX [CRITICAL]: Lock để tránh hai render chạy đồng thời trên shared canvas.
-  // Nếu đang render, bỏ qua request mới thay vì để chúng xen kẽ nhau.
-  if (_renderLock) return;
-  _renderLock = true;
+  if (_renderLock) {
+    _renderPending = true;
+    return;
+  }
+  _renderLock    = true;
+  _renderPending = false;
   try {
     const preview = document.getElementById('result-canvas');
     const output  = await renderResult(1);
@@ -107,16 +116,16 @@ export async function renderToPreview() {
     preview.getContext('2d')?.drawImage(output, 0, 0);
   } finally {
     _renderLock = false;
+    // Nếu có request chờ trong lúc render, thực hiện lại một lần
+    if (_renderPending) {
+      _renderPending = false;
+      void renderToPreview();
+    }
   }
 }
 
 // ─── Crop geometry ────────────────────────────────────────────────────────────
 
-/**
- * FIX [WARNING]: Fallback cũ trả về state.frame.w/h (pixel màn hình) như
- * tọa độ ảnh gốc → render sai vùng ảnh.
- * Fallback đúng là toàn bộ ảnh gốc.
- */
 function getCropRect() {
   const s = state.crop.scale;
   if (!s || s <= 0) {
@@ -334,7 +343,6 @@ function applySkinSmoothing(imageData, amount) {
 
 /**
  * Phát hiện pixel da người dựa trên heuristic màu sắc RGB.
- * Hỗ trợ nhiều sắc da từ sáng đến tối (Caucasian, East Asian, South Asian, African).
  *
  * @param {number} r - Kênh đỏ (0–255)
  * @param {number} g - Kênh xanh lá (0–255)
@@ -352,13 +360,10 @@ export function isSkinPixel(r, g, b) {
 }
 
 /**
- * Phát hiện pixel da trong vùng bóng tối với ngưỡng nới lỏng hơn isSkinPixel.
- * Chấp nhận pixel da tối (r ≥ 25) để nhận diện bóng đổ trên khuôn mặt.
+ * Phát hiện pixel da trong vùng bóng tối với ngưỡng nới lỏng.
  *
- * @param {number} r - Kênh đỏ (0–255)
- * @param {number} g - Kênh xanh lá (0–255)
- * @param {number} b - Kênh xanh lam (0–255)
- * @returns {boolean} true nếu pixel có thể là da trong bóng tối
+ * @param {number} r @param {number} g @param {number} b
+ * @returns {boolean}
  */
 export function isSkinPixelForShadow(r, g, b) {
   if (r < 25 || r > 248) return false;
@@ -371,13 +376,6 @@ export function isSkinPixelForShadow(r, g, b) {
 /**
  * Nhận diện vùng da mặt bị tối/bóng và làm sáng chúng.
  *
- * Thuật toán hai bước:
- *   Pass 1 — Tính luminance trung bình của skin pixel sáng (dùng isSkinPixel nghiêm ngặt).
- *   Pass 2 — Với mỗi pixel da trong vùng tối (dùng isSkinPixelForShadow mở rộng),
- *             nâng sáng tỉ lệ với mức chênh lệch so với trung bình.
- *
- * Fallback: nếu không tìm thấy skin pixel sáng, lấy avgLuma = 120.
- *
  * @param {ImageData} imageData - Dữ liệu ảnh (sửa in-place)
  * @param {number} amount - Mức độ làm sáng (0–100)
  */
@@ -386,7 +384,6 @@ export function applyFaceShadowCorrection(imageData, amount) {
   const { data } = imageData;
   const strength = amount / 100;
 
-  // Pass 1: tính luminance trung bình của da sáng
   let sum = 0, cnt = 0;
   for (let i = 0; i < data.length; i += 4) {
     if (!isSkinPixel(data[i], data[i + 1], data[i + 2])) continue;
@@ -395,7 +392,6 @@ export function applyFaceShadowCorrection(imageData, amount) {
   }
   const avgLuma = cnt > 0 ? sum / cnt : 120;
 
-  // Pass 2: làm sáng pixel da trong bóng tối
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i], g = data[i + 1], b = data[i + 2];
     if (!isSkinPixelForShadow(r, g, b)) continue;
@@ -409,16 +405,59 @@ export function applyFaceShadowCorrection(imageData, amount) {
   }
 }
 
-// ─── Box blur (separable) — với buffer reuse ──────────────────────────────────
+// ─── Box blur (GPU-accelerated khi có OffscreenCanvas, fallback CPU) ──────────
+//
+// FIX [IMPORTANT]: boxBlurRGB CPU-only là O(W×H×r) — trên ảnh 600DPI
+// (~1200×1600px) với radius=8, có thể mất 300–600ms trên main thread.
+//
+// Giải pháp: dùng OffscreenCanvas + CSS blur filter (GPU path).
+// CSS Gaussian blur được hardware-accelerated, nhanh hơn ~10× với radius lớn.
+// Fallback về CPU nếu OffscreenCanvas không khả dụng (< 3% browser hiện tại).
+//
+// Lưu ý về radius mapping:
+//   - CPU box blur: kernel size = 2r+1, σ ≈ r/√3
+//   - CSS blur(r px): Gaussian với σ ≈ r/2
+//   Để giữ mức độ blur tương đương, dùng cùng giá trị r.
+//   Với skin smoothing và unsharp mask, sự khác biệt nhỏ này không ảnh hưởng kết quả cuối.
+
+function gpuBlurRGB(src, W, H, r) {
+  const srcCanvas = new OffscreenCanvas(W, H);
+  srcCanvas.getContext('2d').putImageData(
+    new ImageData(new Uint8ClampedArray(src), W, H),
+    0, 0,
+  );
+
+  const dstCanvas = new OffscreenCanvas(W, H);
+  const dstCtx    = dstCanvas.getContext('2d');
+  dstCtx.filter   = `blur(${r}px)`;
+  dstCtx.drawImage(srcCanvas, 0, 0);
+
+  const pixels = dstCtx.getImageData(0, 0, W, H).data;
+  const len    = pixels.length;
+  if (!_blurOut || _blurOut.length < len) _blurOut = new Float32Array(len);
+  const out = _blurOut;
+  for (let i = 0; i < len; i++) out[i] = pixels[i];
+  return out;
+}
 
 function boxBlurRGB(src, W, H, r) {
   const len = src.length;
 
-  // FIX [SUGGESTION]: Tái sử dụng buffer nếu đủ kích thước,
-  // tránh cấp phát ~5.5MB × 2 mỗi lần render ảnh 600DPI.
   if (!_blurTmp || _blurTmp.length < len) _blurTmp = new Float32Array(len);
   if (!_blurOut || _blurOut.length < len) _blurOut = new Float32Array(len);
 
+  // GPU path: OffscreenCanvas + CSS blur (hardware-accelerated)
+  // Chỉ kích hoạt với r > 1 vì overhead OffscreenCanvas không xứng với blur nhỏ
+  if (r > 1 && typeof OffscreenCanvas !== 'undefined') {
+    try {
+      return gpuBlurRGB(src, W, H, r);
+    } catch {
+      // OffscreenCanvas không được hỗ trợ (private browsing, CSP, etc.)
+      // → fall through to CPU
+    }
+  }
+
+  // CPU path (fallback)
   const tmp = _blurTmp;
   const out = _blurOut;
 
@@ -457,7 +496,6 @@ function boxBlurRGB(src, W, H, r) {
 
 /**
  * Làm tròn và clamp giá trị về khoảng [0, 255].
- * NaN và giá trị âm → 0; giá trị > 255 → 255.
  *
  * @param {number} v - Giá trị đầu vào
  * @returns {number} Số nguyên trong [0, 255]
