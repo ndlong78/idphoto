@@ -1,4 +1,4 @@
-=import { FMTS, state } from './state.js';
+import { FMTS, state } from './state.js';
 import { getControls } from './dom.js';
 import {
   FLOOD_FILL_TOLERANCE,
