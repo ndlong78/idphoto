@@ -13,6 +13,18 @@ let faceApiScriptPromise = null;
 let faceModelLoadPromise = null;
 let faceModelsReady = false;
 
+// FIX [IMPORTANT]: Track các URL đã được inject vào DOM.
+//
+// Bug cũ: khi script inject thành công nhưng faceapi = null (file hỏng),
+// faceApiScriptPromise bị reset → null. Lần sau:
+//   1. isScriptAlreadyLoaded(url) → true
+//   2. faceapi vẫn null → continue
+//   3. Tất cả URL đều continue → return null → reset promise → vòng lặp vô hạn
+//
+// Fix: _triedScriptUrls lưu URL đã inject. Dù promise có bị reset,
+// các URL đã thử sẽ bị skip ngay — không re-inject, không vòng lặp.
+const _triedScriptUrls = new Set();
+
 const FACE_MODEL_FALLBACK = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
 const FACE_API_SCRIPT_SOURCES = [
   'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/dist/face-api.min.js',
@@ -41,11 +53,6 @@ function withTimeout(promise, ms, message) {
   ]);
 }
 
-/**
- * FIX [WARNING]: Kiểm tra script đã được inject vào DOM chưa trước khi thêm mới.
- * Nếu load thành công nhưng globalThis.faceapi = null (file hỏng),
- * faceApiScriptPromise bị reset → lần sau inject script trùng lặp → conflict.
- */
 function isScriptAlreadyLoaded(url) {
   return [...document.querySelectorAll('script')].some((s) => s.src === url);
 }
@@ -80,14 +87,19 @@ function loadScriptSequentially(urls) {
 
   faceApiScriptPromise = (async () => {
     for (const url of urls) {
-      // FIX [WARNING]: Nếu script đã tồn tại trong DOM (từ lần load trước bị
-      // faceapi=null), không inject lại — đợi faceapi xuất hiện trên globalThis.
-      if (isScriptAlreadyLoaded(url)) {
+      // FIX [IMPORTANT]: Kiểm tra cả DOM lẫn _triedScriptUrls.
+      // isScriptAlreadyLoaded đủ cho lần đầu, nhưng sau khi promise reset
+      // về null, _triedScriptUrls ngăn không cho inject lại URL đã thử.
+      if (isScriptAlreadyLoaded(url) || _triedScriptUrls.has(url)) {
         if (globalThis.faceapi) return globalThis.faceapi;
-        // Script đã inject nhưng faceapi vẫn null — không thể dùng URL này
+        // Script đã inject nhưng faceapi vẫn null — URL này không dùng được
         logEvent('ai.face_script_already_loaded_but_null', { url }, 'warn');
         continue;
       }
+
+      // Đánh dấu URL trước khi inject, kể cả nếu sau đó bị lỗi.
+      // Tránh re-inject trong mọi trường hợp (onerror, faceapi=null, etc.)
+      _triedScriptUrls.add(url);
 
       try {
         const startedAt = performance.now();
@@ -119,8 +131,10 @@ function loadScriptSequentially(urls) {
 
   return faceApiScriptPromise.then(
     (result) => {
-      // FIX: Chỉ reset promise nếu thực sự null — nhưng KHÔNG reset nếu
-      // script đã được inject (để tránh inject lại lần sau).
+      // Chỉ reset promise nếu không có URL nào được inject.
+      // Nếu đã inject (dù faceapi=null), _triedScriptUrls đã ngăn re-inject
+      // → reset promise cũng an toàn, nhưng không cần thiết.
+      // Reset để caller có thể gọi lại sau khi user reload network.
       if (!result) faceApiScriptPromise = null;
       return result;
     },
@@ -184,7 +198,7 @@ export async function warmupAi() {
 
 /**
  * Tải mô hình nhận diện khuôn mặt (TinyFaceDetector + landmarks).
- * Idempotent và chống race condition: nhiều lời gọi đồng thời dùng chung promise.
+ * Idempotent và chống race condition.
  *
  * @returns {Promise<boolean>} true nếu tải thành công
  */
@@ -231,8 +245,8 @@ export async function loadFaceModels() {
 /**
  * Nhận diện khuôn mặt đầu tiên trong canvas.
  *
- * @param {HTMLCanvasElement} canvas - Canvas chứa ảnh gốc
- * @returns {Promise<{box: object, score: number}|null>} Dữ liệu khuôn mặt hoặc null
+ * @param {HTMLCanvasElement} canvas
+ * @returns {Promise<{box: object, score: number}|null>}
  */
 export async function detectFace(canvas) {
   const ready = faceModelsReady ? true : await loadFaceModels();
@@ -258,9 +272,9 @@ export async function detectFace(canvas) {
 /**
  * Chạy AI tách nền cho file ảnh.
  *
- * @param {File} file - File ảnh đầu vào
- * @param {function(number, number): void} [progress] - Callback tiến trình (current, total)
- * @returns {Promise<HTMLImageElement|null>} Ảnh đã tách nền (PNG RGBA) hoặc null nếu thất bại
+ * @param {File} file
+ * @param {function(number, number): void} [progress]
+ * @returns {Promise<HTMLImageElement|null>}
  */
 export async function runBackgroundRemoval(file, progress) {
   if (!state.aiReady || !removeBackgroundFn) return null;
