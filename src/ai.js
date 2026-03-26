@@ -200,10 +200,21 @@ export async function warmupAi() {
  * Tải mô hình nhận diện khuôn mặt (TinyFaceDetector + landmarks).
  * Idempotent và chống race condition.
  *
+ * Concurrency contract:
+ *   - Nếu có promise đang pending → trả về promise đó (không tạo mới)
+ *   - Nếu đã thành công (faceModelsReady = true) → trả về true ngay
+ *   - Nếu thất bại → reset faceModelLoadPromise = null để cho phép retry
+ *     (hữu ích khi mạng khôi phục sau lần đầu thất bại)
+ *
  * @returns {Promise<boolean>} true nếu tải thành công
  */
 export async function loadFaceModels() {
   if (faceModelsReady) return true;
+
+  // FIX [IMPORTANT]: Trả về promise đang pending thay vì tạo promise mới.
+  // Nếu nhiều caller gọi loadFaceModels() đồng thời (ví dụ processFile chạy
+  // warmupAi và loadFaceModels song song qua Promise.all), tất cả đều nhận
+  // về cùng một promise — tránh tải model nhiều lần.
   if (faceModelLoadPromise) return faceModelLoadPromise;
 
   faceModelLoadPromise = (async () => {
@@ -238,6 +249,9 @@ export async function loadFaceModels() {
   try {
     return await faceModelLoadPromise;
   } finally {
+    // Reset chỉ khi thất bại để cho phép retry sau khi mạng khôi phục.
+    // Khi thành công (faceModelsReady = true), guard ở đầu hàm sẽ
+    // short-circuit ngay — không cần giữ lại promise.
     if (!faceModelsReady) faceModelLoadPromise = null;
   }
 }
