@@ -10,6 +10,25 @@ export const FMTS = {
   japan:         { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
 };
 
+// FIX [IMPORTANT]: Kiểm tra contract FMTS tại load time.
+//
+// download() trong ui.js tính scale = targetDpi / fmt.dpi, với
+// targetDpi ∈ {300, 600}. Logic này giả định fmt.dpi = 300:
+//   - jpeg300 → scale = 300/300 = 1× (output = w×h px)
+//   - jpeg600 → scale = 600/300 = 2× (output = 2w×2h px)
+//
+// Nếu thêm format mới với dpi ≠ 300, scale sẽ tính sai kích thước file
+// và ảnh in ra sẽ không đúng mm. Throw ngay khi module load để fail fast
+// thay vì xuất ảnh sai kích thước một cách âm thầm.
+for (const [key, fmt] of Object.entries(FMTS)) {
+  if (fmt.dpi !== 300) {
+    throw new Error(
+      `FMTS['${key}'].dpi phải là 300 (nhận được ${fmt.dpi}). ` +
+      'Xem logic download() trong ui.js trước khi thêm format mới.',
+    );
+  }
+}
+
 export const state = {
   origImg:   null,
   origFile:  null,
