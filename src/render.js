@@ -1,4 +1,4 @@
-import { FMTS, state } from './state.js';
+=import { FMTS, state } from './state.js';
 import { getControls } from './dom.js';
 import {
   FLOOD_FILL_TOLERANCE,
@@ -8,6 +8,7 @@ import {
 } from './constants.js';
 
 // ─── Canvas reuse ─────────────────────────────────────────────────────────────
+// Chỉ dùng cho scale=1 (preview). Hi-res export tạo canvas mới — xem renderResult.
 let _outCanvas  = null;
 let _maskCanvas = null;
 
@@ -46,11 +47,32 @@ export async function renderResult(scale = 1) {
   const w   = Math.round(fmt.w * scale);
   const h   = Math.round(fmt.h * scale);
 
-  _outCanvas  = getCanvas(_outCanvas,  w, h);
-  _maskCanvas = getCanvas(_maskCanvas, w, h);
+  // FIX [CRITICAL]: Dùng canvas riêng cho hi-res export (scale !== 1) để tránh
+  // race condition khi download() và renderToPreview() chạy đồng thời.
+  //
+  // Vấn đề cũ: _outCanvas và _maskCanvas là module-level. Nếu user bấm
+  // "Tải xuống 600 DPI" (scale=2) trong khi preview đang render (scale=1),
+  // cả hai cùng ghi vào một canvas → ảnh kết quả bị hỏng hoặc lẫn lộn.
+  //
+  // Giải pháp: scale=1 (preview) vẫn tái sử dụng _outCanvas/_maskCanvas
+  // để tiết kiệm bộ nhớ; scale>1 (export) tạo canvas mới mỗi lần.
+  let outCanvas, maskCanvas;
+  if (scale === 1) {
+    _outCanvas  = getCanvas(_outCanvas,  w, h);
+    _maskCanvas = getCanvas(_maskCanvas, w, h);
+    outCanvas  = _outCanvas;
+    maskCanvas = _maskCanvas;
+  } else {
+    outCanvas        = document.createElement('canvas');
+    outCanvas.width  = w;
+    outCanvas.height = h;
+    maskCanvas        = document.createElement('canvas');
+    maskCanvas.width  = w;
+    maskCanvas.height = h;
+  }
 
-  const ctx = _outCanvas.getContext('2d');
-  if (!ctx || !state.origImg) return _outCanvas;
+  const ctx = outCanvas.getContext('2d');
+  if (!ctx || !state.origImg) return outCanvas;
 
   const crop = getCropRect();
   ctx.drawImage(state.origImg, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
@@ -59,7 +81,7 @@ export async function renderResult(scale = 1) {
   const bg = state.bgColor;
 
   if (state.aiMaskImg) {
-    const mctx = _maskCanvas.getContext('2d');
+    const mctx = maskCanvas.getContext('2d');
     if (mctx) {
       mctx.clearRect(0, 0, w, h);
       mctx.drawImage(state.aiMaskImg, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
@@ -78,17 +100,31 @@ export async function renderResult(scale = 1) {
         }
       }
 
+      // FIX [IMPORTANT]: Áp dụng điều chỉnh TRƯỚC khi blend nền.
+      //
+      // Vấn đề cũ: applyAdjustments() chạy SAU khi blend → skin/shadow
+      // detection đọc pixel đã có màu nền mới. Nền màu kem (245,240,232)
+      // hoặc nền xanh nhạt có thể bị nhận nhầm là da người bởi isSkinPixel,
+      // làm mịn da tràn sang vùng nền.
+      //
+      // Giải pháp: chạy adjustments trên ảnh gốc (chỉ có người, chưa có nền
+      // mới), sau đó mới blend. Skin/shadow detection chỉ thấy pixel người.
+      applyAdjustments(imageData);
       blendAiAlpha(imageData.data, maskData.data, bg);
     }
   } else {
+    // FIX [IMPORTANT]: Flood fill phát hiện nền dựa trên màu pixel gốc.
+    // Chạy flood fill TRƯỚC applyAdjustments để brightness/contrast không làm
+    // lệch ngưỡng colorDistance khi so sánh pixel corner với phần còn lại.
+    // Sau khi mask xác định xong, mới áp dụng điều chỉnh rồi blend nền.
     const mask = floodFill(imageData, FLOOD_FILL_TOLERANCE);
     featherMask(mask, w, h, getControls().feather.valueAsNumber);
+    applyAdjustments(imageData);
     applyFloodFillAlpha(imageData.data, mask, bg);
   }
 
-  applyAdjustments(imageData);
   ctx.putImageData(imageData, 0, 0);
-  return _outCanvas;
+  return outCanvas;
 }
 
 /**
@@ -228,14 +264,17 @@ function floodFill(imgData, tol) {
   for (let x = 0; x < W; x += 2) { visit(x, 0); visit(x, H - 1); }
   for (let y = 0; y < H; y += 2) { visit(0, y); visit(W - 1, y); }
 
+  // FIX [CRITICAL]: Thay thế forEach tạo array tạm [[nx,ny],...] bằng
+  // inline bounds check. Với ảnh 600 DPI (~1.2M pixel), vòng lặp cũ
+  // tạo ~5M temporary array mỗi lần flood fill → GC pressure lớn.
   while (head < queue.length) {
     const i = queue[head++];
     const x = i % W;
     const y = Math.floor(i / W);
-    const neighbors = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
-    neighbors.forEach(([nx, ny]) => {
-      if (nx >= 0 && nx < W && ny >= 0 && ny < H) visit(nx, ny);
-    });
+    if (x > 0)     visit(x - 1, y);
+    if (x < W - 1) visit(x + 1, y);
+    if (y > 0)     visit(x, y - 1);
+    if (y < H - 1) visit(x, y + 1);
   }
 
   return mask;
