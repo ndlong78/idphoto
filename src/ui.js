@@ -14,6 +14,7 @@ import { logEvent } from './telemetry.js';
 
 let toastTimer = null;
 let uiController = null;
+let resultResizeRaf = 0;
 
 // FIX [WARNING]: Khai báo debounce timer ở module scope để có thể clear
 // khi initUI() được gọi lại (ví dụ sau resetState()).
@@ -97,11 +98,20 @@ export function initUI(actions) {
   bindClick('btn-result-fit',   () => fitFromSource(), signal);
 
   const prevWrap = document.getElementById('prev-wrap');
+  updateResultFrameSize();
 
   prevWrap.addEventListener('wheel', (e) => {
     e.preventDefault();
     zoomFromSource(e.deltaY < 0 ? 1 : -1);
   }, { passive: false, signal });
+
+  window.addEventListener('resize', () => {
+    if (resultResizeRaf) cancelAnimationFrame(resultResizeRaf);
+    resultResizeRaf = requestAnimationFrame(() => {
+      updateResultFrameSize();
+      resultResizeRaf = 0;
+    });
+  }, { signal });
 
   bindClick('btn-open-lightbox', () => openLightbox(), signal);
   bindClick('btn-lb-close',  () => closeLightbox(),  signal);
@@ -141,6 +151,7 @@ export function initUI(actions) {
       computeFrame();
       fitImage(false);
       if (state.faceData) centerFace();
+      updateResultFrameSize();
       applyResultTransform();
       void safeRender();
       document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
@@ -398,9 +409,39 @@ function zoomResultFit() {
 }
 
 function applyResultTransform() {
+  updateResultFrameSize();
   const canvas = document.getElementById('result-canvas');
   canvas.style.transform = 'translate(0px, 0px) scale(1)';
   document.getElementById('zoom-out-lbl').textContent = `${Math.round(state.crop.scale * 100)}%`;
+}
+
+/**
+ * Giữ khung kết quả cố định giống tỉ lệ và cảm giác "khung trong" ở ảnh gốc.
+ * Khung này không đổi khi user kéo/zoom ảnh; chỉ đổi khi thay đổi format hoặc resize panel.
+ */
+function updateResultFrameSize() {
+  const wrap = document.getElementById('prev-wrap');
+  const frame = document.getElementById('result-frame');
+  if (!wrap || !frame) return;
+
+  const fmt = FMTS[state.curFmt];
+  if (!fmt) return;
+
+  const wrapW = wrap.clientWidth;
+  const wrapH = wrap.clientHeight;
+  if (!wrapW || !wrapH) return;
+
+  const pad = 32;
+  const maxW = Math.max(20, wrapW - pad * 2);
+  const maxH = Math.max(20, wrapH - pad * 2);
+  const aspect = fmt.w / fmt.h;
+  const wrapAspect = maxW / maxH;
+
+  const frameW = wrapAspect > aspect ? maxH * aspect : maxW;
+  const frameH = frameW / aspect;
+
+  frame.style.width = `${Math.round(frameW)}px`;
+  frame.style.height = `${Math.round(frameH)}px`;
 }
 
 function zoomFromSource(dir) {
