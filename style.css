@@ -233,22 +233,11 @@ main { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; paddin
   flex: 1; min-height: 320px;
   background: repeating-conic-gradient(var(--card2) 0% 25%, var(--card) 0% 50%) 0 0 / 16px 16px;
   overflow: hidden; position: relative;
-  display: flex; align-items: center; justify-content: center;
-  cursor: default;
-}
-
-.result-frame {
-  position: relative;
-  border: 1px solid rgba(212,175,80,.38);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 6px 24px rgba(0,0,0,.35);
-  background: rgba(255,255,255,.05);
-  border-radius: 2px;
-  overflow: hidden;
-  flex-shrink: 0;
+  display: flex;
   cursor: grab;
   touch-action: none;
 }
-.result-frame.dragging-face { cursor: grabbing; }
+.prev-wrap.dragging-face { cursor: grabbing; }
 
 #result-canvas {
   width: 100%;
