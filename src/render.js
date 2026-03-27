@@ -27,6 +27,7 @@ let _blurOut = null;
 //   → sau khi unlock, tự động render lại một lần nếu có request đang chờ.
 let _renderLock    = false;
 let _renderPending = false;
+let _renderVersion = 0;
 
 /** Lấy canvas tái sử dụng với kích thước mong muốn */
 function getCanvas(store, w, h) {
@@ -138,6 +139,7 @@ export async function renderResult(scale = 1) {
  * @returns {Promise<void>}
  */
 export async function renderToPreview() {
+  const requestVersion = ++_renderVersion;
   if (_renderLock) {
     _renderPending = true;
     return;
@@ -146,7 +148,13 @@ export async function renderToPreview() {
   _renderPending = false;
   try {
     const preview = document.getElementById('result-canvas');
+    if (!preview) return;
+
     const output  = await renderResult(1);
+
+    // Chỉ commit nếu đây vẫn là request mới nhất.
+    if (requestVersion !== _renderVersion) return;
+
     preview.width  = output.width;
     preview.height = output.height;
     preview.getContext('2d')?.drawImage(output, 0, 0);

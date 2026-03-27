@@ -1,18 +1,28 @@
 import { state } from './state.js';
 
+function fallbackInput(value = 0) {
+  return { valueAsNumber: value, value: String(value) };
+}
+
+function getNumericInput(id, fallback = 0) {
+  const el = document.getElementById(id);
+  if (el && typeof el.valueAsNumber === 'number') return el;
+  return fallbackInput(fallback);
+}
+
 /**
  * Trả về các HTMLInputElement của thanh điều chỉnh ảnh.
  *
- * @returns {{bright: HTMLInputElement, contrast: HTMLInputElement, sharp: HTMLInputElement, skin: HTMLInputElement, feather: HTMLInputElement, shadow: HTMLInputElement}}
+ * @returns {{bright: HTMLInputElement|{valueAsNumber:number,value:string}, contrast: HTMLInputElement|{valueAsNumber:number,value:string}, sharp: HTMLInputElement|{valueAsNumber:number,value:string}, skin: HTMLInputElement|{valueAsNumber:number,value:string}, feather: HTMLInputElement|{valueAsNumber:number,value:string}, shadow: HTMLInputElement|{valueAsNumber:number,value:string}}}
  */
 export function getControls() {
   return {
-    bright:   document.getElementById('bright'),
-    contrast: document.getElementById('contrast'),
-    sharp:    document.getElementById('sharp'),
-    skin:     document.getElementById('skin'),
-    feather:  document.getElementById('feather'),
-    shadow:   document.getElementById('shadow'),
+    bright:   getNumericInput('bright', 0),
+    contrast: getNumericInput('contrast', 0),
+    sharp:    getNumericInput('sharp', 0),
+    skin:     getNumericInput('skin', 0),
+    feather:  getNumericInput('feather', 0),
+    shadow:   getNumericInput('shadow', 0),
   };
 }
 
@@ -23,6 +33,8 @@ export function getControls() {
  */
 export function syncZoomUI() {
   const percent = Math.round(state.crop.scale * 100);
-  document.getElementById('zoom-lbl').textContent = `${percent}%`;
-  document.getElementById('zoom-range').value      = `${Math.max(5, Math.min(2500, percent))}`;
+  const zoomLbl = document.getElementById('zoom-lbl');
+  const zoomRange = document.getElementById('zoom-range');
+  if (zoomLbl) zoomLbl.textContent = `${percent}%`;
+  if (zoomRange) zoomRange.value = `${Math.max(5, Math.min(2500, percent))}`;
 }
