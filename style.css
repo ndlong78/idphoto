@@ -274,7 +274,7 @@ main { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; paddin
 
 .result-split-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 8px 10px;
   border-top: 1px solid var(--border);
@@ -295,8 +295,6 @@ main { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; paddin
   line-height: 1.4;
 }
 
-#result-main-canvas,
-#result-bg-canvas,
 #result-face-canvas {
   width: 100%;
   height: auto;
