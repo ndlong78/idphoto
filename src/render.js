@@ -44,6 +44,20 @@ function getCanvas(store, w, h) {
  * @returns {Promise<HTMLCanvasElement>}
  */
 export async function renderResult(scale = 1) {
+  const parts = await renderResultParts(scale);
+  return parts.composed;
+}
+
+/**
+ * Render 3 lớp ảnh để hiển thị "bóc tách" trong panel kết quả:
+ * - composed: ảnh kết quả cuối (người + nền)
+ * - background: khung ảnh visa/hộ chiếu với màu nền đang chọn
+ * - faceCutout: ảnh người đã tách nền (alpha trong suốt)
+ *
+ * @param {number} [scale=1]
+ * @returns {Promise<{composed: HTMLCanvasElement, background: HTMLCanvasElement, faceCutout: HTMLCanvasElement}>}
+ */
+export async function renderResultParts(scale = 1) {
   const fmt = FMTS[state.curFmt];
   const w   = Math.round(fmt.w * scale);
   const h   = Math.round(fmt.h * scale);
@@ -73,13 +87,20 @@ export async function renderResult(scale = 1) {
   }
 
   const ctx = outCanvas.getContext('2d');
-  if (!ctx || !state.origImg) return outCanvas;
+  if (!ctx || !state.origImg) {
+    return {
+      composed: outCanvas,
+      background: createSolidBackgroundCanvas(w, h, state.bgColor),
+      faceCutout: getCanvas(null, w, h),
+    };
+  }
 
   const crop = getCropRect();
   ctx.drawImage(state.origImg, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
 
   const imageData = ctx.getImageData(0, 0, w, h);
   const bg = state.bgColor;
+  let faceCutoutData = null;
 
   if (state.aiMaskImg) {
     const mctx = maskCanvas.getContext('2d');
@@ -112,6 +133,7 @@ export async function renderResult(scale = 1) {
       // Giải pháp: chạy adjustments trên ảnh gốc (chỉ có người, chưa có nền
       // mới), sau đó mới blend. Skin/shadow detection chỉ thấy pixel người.
       applyAdjustments(imageData);
+      faceCutoutData = extractFaceCutoutFromMask(imageData, maskData.data);
       blendAiAlpha(imageData.data, maskData.data, bg);
     }
   } else {
@@ -122,11 +144,22 @@ export async function renderResult(scale = 1) {
     const mask = floodFill(imageData, FLOOD_FILL_TOLERANCE);
     featherMask(mask, w, h, getControls().feather.valueAsNumber);
     applyAdjustments(imageData);
+    faceCutoutData = extractFaceCutoutFromMask(imageData, maskToRgba(mask));
     applyFloodFillAlpha(imageData.data, mask, bg);
   }
 
   ctx.putImageData(imageData, 0, 0);
-  return outCanvas;
+  const faceCutout = getCanvas(null, w, h);
+  const faceCtx = faceCutout.getContext('2d');
+  if (faceCtx && faceCutoutData) {
+    faceCtx.putImageData(faceCutoutData, 0, 0);
+  }
+
+  return {
+    composed: outCanvas,
+    background: createSolidBackgroundCanvas(w, h, bg),
+    faceCutout,
+  };
 }
 
 /**
@@ -151,14 +184,15 @@ export async function renderToPreview() {
     const preview = document.getElementById('result-canvas');
     if (!preview) return;
 
-    const output  = await renderResult(1);
+    const resultParts  = await renderResultParts(1);
 
     // Chỉ commit nếu đây vẫn là request mới nhất.
     if (requestVersion !== _renderVersion) return;
 
-    preview.width  = output.width;
-    preview.height = output.height;
-    preview.getContext('2d')?.drawImage(output, 0, 0);
+    // User requirement: chỉ giữ 1 ảnh duy nhất ở panel kết quả là ảnh tách nền.
+    preview.width  = resultParts.faceCutout.width;
+    preview.height = resultParts.faceCutout.height;
+    preview.getContext('2d')?.drawImage(resultParts.faceCutout, 0, 0);
   } finally {
     _renderLock = false;
     // Nếu có request chờ trong lúc render, thực hiện lại một lần
@@ -167,6 +201,44 @@ export async function renderToPreview() {
       void renderToPreview();
     }
   }
+}
+
+function createSolidBackgroundCanvas(width, height, bg) {
+  const canvas = getCanvas(null, width, height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = bg.r;
+    data[i + 1] = bg.g;
+    data[i + 2] = bg.b;
+    data[i + 3] = 255;
+  }
+  ctx.putImageData(createImageDataLike(data, width, height), 0, 0);
+  return canvas;
+}
+
+function extractFaceCutoutFromMask(imageData, maskRgba) {
+  const out = new Uint8ClampedArray(imageData.data);
+  for (let i = 0; i < out.length; i += 4) {
+    out[i + 3] = maskRgba[i + 3];
+  }
+  return createImageDataLike(out, imageData.width, imageData.height);
+}
+
+function maskToRgba(mask) {
+  const rgba = new Uint8ClampedArray(mask.length * 4);
+  for (let i = 0; i < mask.length; i++) {
+    rgba[i * 4 + 3] = 255 - mask[i];
+  }
+  return rgba;
+}
+
+function createImageDataLike(data, width, height) {
+  if (typeof ImageData !== 'undefined') {
+    return new ImageData(data, width, height);
+  }
+  return { data, width, height };
 }
 
 // ─── Crop geometry ────────────────────────────────────────────────────────────
