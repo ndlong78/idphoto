@@ -73,8 +73,12 @@ export function initUI(actions) {
   bindClick('btn-reset-face', () => {
     state.faceAdjust.yOffsetPct = 0;
     syncFaceAdjustUI();
-    centerFace();
-    void safeRender();
+    if (state.faceData) {
+      centerFace();
+      void safeRender();
+    } else {
+      fitImage(true);
+    }
   }, signal);
   bindClick('btn-fit', () => fitImage(true), signal);
   bindClick('btn-zoom-minus', () => applyZoom(0.85, state.cW / 2, state.cH / 2), signal);
@@ -197,13 +201,19 @@ export function initUI(actions) {
   const faceShiftInput = document.getElementById('face-y-offset');
   if (faceShiftInput) {
     faceShiftInput.addEventListener('input', () => {
+      const prevOffset = state.faceAdjust.yOffsetPct;
       state.faceAdjust.yOffsetPct = faceShiftInput.valueAsNumber;
       const lbl = document.getElementById('face-yv');
       if (lbl) lbl.textContent = `${state.faceAdjust.yOffsetPct > 0 ? '+' : ''}${state.faceAdjust.yOffsetPct}%`;
       if (state.faceData) {
         centerFace();
-        void safeRender();
+      } else {
+        // Không có faceData: vẫn cho phép kéo ảnh lên/xuống theo % khung để
+        // user chủ động chỉnh khoảng trống phía trên đỉnh đầu.
+        const deltaPct = state.faceAdjust.yOffsetPct - prevOffset;
+        state.crop.y += state.frame.h * (deltaPct / 100);
       }
+      void safeRender();
     }, { signal });
   }
   syncFaceAdjustUI();

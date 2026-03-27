@@ -186,10 +186,11 @@ export function centerFace() {
   const faceScaleFactor = layout?.faceScaleFactor ?? CROP_FACE_SCALE_FACTOR;
   const topPaddingRatio = layout?.topPaddingRatio ?? (CROP_FACE_VERTICAL_BIAS - faceScaleFactor / 2);
   const yOffsetPct = state.faceAdjust?.yOffsetPct ?? 0;
+  const resolvedTopPadding = Math.max(-0.2, Math.min(0.45, topPaddingRatio + yOffsetPct / 100));
 
   state.crop.scale = (state.frame.h * faceScaleFactor) / b.height;
   state.crop.x = state.frame.x + state.frame.w / 2 - (b.x + b.width / 2) * state.crop.scale;
-  state.crop.y = state.frame.y + state.frame.h * (topPaddingRatio + yOffsetPct / 100) - b.y * state.crop.scale;
+  state.crop.y = state.frame.y + state.frame.h * resolvedTopPadding - b.y * state.crop.scale;
   needDraw = true;
   syncZoomUI();
 }
