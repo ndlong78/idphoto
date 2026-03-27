@@ -451,27 +451,36 @@ function applyResultTransform() {
 }
 
 /**
- * Đồng bộ canvas kết quả theo đúng kích thước vùng preview bên phải.
- * Không dùng khung lồng bên trong để giao diện nhất quán với panel ảnh gốc.
+ * Đồng bộ khung kết quả theo đúng "khung cắt" bên trái và tỉ lệ format hiện tại.
+ * Mục tiêu:
+ * - Không méo ảnh preview khi đổi format visa (30x40, 35x45, 51x51...)
+ * - Khung "Ảnh gốc" và "Kết quả" có cảm giác 1:1 khi so sánh trực quan.
  */
 function updateResultFrameSize() {
   const wrap = document.getElementById('prev-wrap');
   const canvas = document.getElementById('result-canvas');
-  const cropCanvas = document.getElementById('crop-canvas');
+  const fmt = FMTS[state.curFmt];
   if (!wrap || !canvas) return;
 
-  const frameW = cropCanvas?.clientWidth || wrap.clientWidth;
-  const frameH = cropCanvas?.clientHeight || wrap.clientHeight;
+  // Ưu tiên dùng đúng kích thước khung crop đang hiển thị ở panel trái.
+  // Nếu chưa có frame (lúc init sớm), fallback theo tỉ lệ format hiện tại.
+  const fallbackW = wrap.clientWidth || 1;
+  const fallbackH = Math.round(fallbackW / Math.max(1e-6, fmt.w / fmt.h));
+  const frameW = Math.round(state.frame?.w ?? fallbackW);
+  const frameH = Math.round(state.frame?.h ?? fallbackH);
   if (!frameW || !frameH) return;
 
-  // Giữ 2 khung "Ảnh gốc" và "Kết quả" luôn cùng tỷ lệ hiển thị.
+  // Khóa khung kết quả theo đúng kích thước/tỉ lệ frame trái.
+  wrap.style.width = `${frameW}px`;
   wrap.style.height = `${frameH}px`;
   wrap.style.minHeight = `${frameH}px`;
   wrap.style.maxHeight = `${frameH}px`;
   wrap.style.aspectRatio = `${frameW} / ${frameH}`;
+  wrap.style.margin = '0 auto';
 
-  canvas.style.width = `${frameW}px`;
-  canvas.style.height = `${frameH}px`;
+  // Canvas preview giữ đầy khung để không bị "stretch" sai tỉ lệ theo panel.
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
 }
 
 function zoomFromSource(dir) {
