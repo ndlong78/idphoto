@@ -45,7 +45,7 @@ function getCanvas(store, w, h) {
  */
 export async function renderResult(scale = 1) {
   const parts = await renderResultParts(scale);
-  return parts.composed;
+  return composeResultLayers(parts, scale);
 }
 
 /**
@@ -189,9 +189,7 @@ export async function renderToPreview() {
     // Chỉ commit nếu đây vẫn là request mới nhất.
     if (requestVersion !== _renderVersion) return;
 
-    preview.width  = resultParts.composed.width;
-    preview.height = resultParts.composed.height;
-    preview.getContext('2d')?.drawImage(resultParts.composed, 0, 0);
+    composeResultLayers(resultParts, 1, preview);
 
   } finally {
     _renderLock = false;
@@ -201,6 +199,22 @@ export async function renderToPreview() {
       void renderToPreview();
     }
   }
+}
+
+function composeResultLayers(parts, _scale = 1, canvas = null) {
+  const width = parts.background.width;
+  const height = parts.background.height;
+  const out = getCanvas(canvas, width, height);
+  const ctx = out.getContext('2d');
+  if (!ctx) return out;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(parts.background, 0, 0);
+
+  const offsetX = Math.round((state.resultFaceOffsetPct?.x ?? 0) * width / 100);
+  const offsetY = Math.round((state.resultFaceOffsetPct?.y ?? 0) * height / 100);
+  ctx.drawImage(parts.faceCutout, offsetX, offsetY);
+  return out;
 }
 
 function createSolidBackgroundCanvas(width, height, bg) {

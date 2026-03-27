@@ -15,6 +15,8 @@ import { logEvent } from './telemetry.js';
 let toastTimer = null;
 let uiController = null;
 let resultResizeRaf = 0;
+let resultFaceDragging = false;
+let resultFaceLastPoint = { x: 0, y: 0 };
 
 // FIX [WARNING]: Khai báo debounce timer ở module scope để có thể clear
 // khi initUI() được gọi lại (ví dụ sau resetState()).
@@ -81,6 +83,7 @@ export function initUI(actions) {
   bindAsyncClick('btn-reprocess', actions.onReprocessAI, signal);
   bindClick('btn-reset-face', () => {
     state.faceAdjust.yOffsetPct = 0;
+    state.resultFaceOffsetPct = { x: 0, y: 0 };
     syncFaceAdjustUI();
     if (state.faceData) {
       centerFace();
@@ -98,12 +101,52 @@ export function initUI(actions) {
   bindClick('btn-result-fit',   () => fitFromSource(), signal);
 
   const prevWrap = document.getElementById('prev-wrap');
+  const resultFrame = document.getElementById('result-frame');
   updateResultFrameSize();
 
   prevWrap.addEventListener('wheel', (e) => {
     e.preventDefault();
     zoomFromSource(e.deltaY < 0 ? 1 : -1);
   }, { passive: false, signal });
+
+  resultFrame?.addEventListener('mousedown', (e) => {
+    resultFaceDragging = true;
+    resultFaceLastPoint = { x: e.clientX, y: e.clientY };
+    resultFrame.classList.add('dragging-face');
+    e.preventDefault();
+  }, { signal });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!resultFaceDragging) return;
+    updateResultFaceOffsetByDelta(e.clientX - resultFaceLastPoint.x, e.clientY - resultFaceLastPoint.y);
+    resultFaceLastPoint = { x: e.clientX, y: e.clientY };
+  }, { signal });
+
+  window.addEventListener('mouseup', () => {
+    if (!resultFaceDragging) return;
+    resultFaceDragging = false;
+    resultFrame?.classList.remove('dragging-face');
+  }, { signal });
+
+  resultFrame?.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    resultFaceDragging = true;
+    resultFaceLastPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    resultFrame.classList.add('dragging-face');
+  }, { passive: true, signal });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!resultFaceDragging || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    updateResultFaceOffsetByDelta(touch.clientX - resultFaceLastPoint.x, touch.clientY - resultFaceLastPoint.y);
+    resultFaceLastPoint = { x: touch.clientX, y: touch.clientY };
+  }, { passive: true, signal });
+
+  window.addEventListener('touchend', () => {
+    if (!resultFaceDragging) return;
+    resultFaceDragging = false;
+    resultFrame?.classList.remove('dragging-face');
+  }, { signal });
 
   window.addEventListener('resize', () => {
     if (resultResizeRaf) cancelAnimationFrame(resultResizeRaf);
@@ -147,6 +190,7 @@ export function initUI(actions) {
       btn.classList.add('active');
       state.curFmt = btn.dataset.fmt;
       state.faceAdjust.yOffsetPct = 0;
+      state.resultFaceOffsetPct = { x: 0, y: 0 };
       syncFaceAdjustUI();
       computeFrame();
       fitImage(false);
@@ -445,6 +489,29 @@ function zoomFromSource(dir) {
 function fitFromSource() {
   fitImage(true);
   void safeRender();
+}
+
+function updateResultFaceOffsetByDelta(deltaX, deltaY) {
+  const resultFrame = document.getElementById('result-frame');
+  if (!resultFrame) return;
+  const frameW = resultFrame.clientWidth || 1;
+  const frameH = resultFrame.clientHeight || 1;
+
+  state.resultFaceOffsetPct.x = clamp(
+    (state.resultFaceOffsetPct?.x ?? 0) + (deltaX / frameW) * 100,
+    -100,
+    100,
+  );
+  state.resultFaceOffsetPct.y = clamp(
+    (state.resultFaceOffsetPct?.y ?? 0) + (deltaY / frameH) * 100,
+    -100,
+    100,
+  );
+  void safeRender();
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 // ─── Lightbox ─────────────────────────────────────────────────────────────────
