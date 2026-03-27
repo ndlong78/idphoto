@@ -6,6 +6,7 @@ import {
   CROP_FIT_MAX_SCALE,
   CROP_FACE_SCALE_FACTOR,
   CROP_FACE_VERTICAL_BIAS,
+  CROP_FACE_LAYOUT_BY_FORMAT,
 } from './constants.js';
 
 let cropController = null;
@@ -181,9 +182,14 @@ export function fitImage(rerender) {
 export function centerFace() {
   if (!state.faceData) return;
   const b = state.faceData.box;
-  state.crop.scale = (state.frame.h * CROP_FACE_SCALE_FACTOR) / b.height;
+  const layout = CROP_FACE_LAYOUT_BY_FORMAT[state.curFmt] ?? null;
+  const faceScaleFactor = layout?.faceScaleFactor ?? CROP_FACE_SCALE_FACTOR;
+  const topPaddingRatio = layout?.topPaddingRatio ?? (CROP_FACE_VERTICAL_BIAS - faceScaleFactor / 2);
+  const yOffsetPct = state.faceAdjust?.yOffsetPct ?? 0;
+
+  state.crop.scale = (state.frame.h * faceScaleFactor) / b.height;
   state.crop.x = state.frame.x + state.frame.w / 2 - (b.x + b.width / 2) * state.crop.scale;
-  state.crop.y = state.frame.y + state.frame.h * CROP_FACE_VERTICAL_BIAS - (b.y + b.height / 2) * state.crop.scale;
+  state.crop.y = state.frame.y + state.frame.h * (topPaddingRatio + yOffsetPct / 100) - b.y * state.crop.scale;
   needDraw = true;
   syncZoomUI();
 }

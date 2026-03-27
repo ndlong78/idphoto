@@ -26,6 +26,24 @@ export const CROP_FACE_SCALE_FACTOR  = 0.65;
  */
 export const CROP_FACE_VERTICAL_BIAS = 0.37;
 
+/**
+ * Tỉ lệ khuôn mặt theo từng chuẩn giấy tờ.
+ *
+ * - faceScaleFactor: chiều cao mặt (bounding box AI) so với chiều cao khung.
+ * - topPaddingRatio: khoảng cách từ đỉnh khung tới đỉnh bounding box khuôn mặt.
+ *
+ * Lưu ý: box của TinyFaceDetector thường không gồm toàn bộ tóc, nên cần chừa
+ * khoảng đỉnh hợp lý để tránh cảm giác "chạm đầu" ở ảnh visa.
+ */
+export const CROP_FACE_LAYOUT_BY_FORMAT = {
+  'passport-vn': { faceScaleFactor: 0.66, topPaddingRatio: 0.11 },
+  cccd:          { faceScaleFactor: 0.64, topPaddingRatio: 0.12 },
+  'us-visa':     { faceScaleFactor: 0.68, topPaddingRatio: 0.09 },
+  schengen:      { faceScaleFactor: 0.66, topPaddingRatio: 0.11 },
+  'uk-visa':     { faceScaleFactor: 0.66, topPaddingRatio: 0.11 },
+  japan:         { faceScaleFactor: 0.65, topPaddingRatio: 0.12 },
+};
+
 // ── AI / face detection ───────────────────────────────────────
 /**
  * Input size của TinyFaceDetector — phải là bội số 32.
