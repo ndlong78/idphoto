@@ -101,7 +101,6 @@ export function initUI(actions) {
   bindClick('btn-result-fit',   () => fitFromSource(), signal);
 
   const prevWrap = document.getElementById('prev-wrap');
-  const resultFrame = document.getElementById('result-frame');
   updateResultFrameSize();
 
   prevWrap.addEventListener('wheel', (e) => {
@@ -109,10 +108,10 @@ export function initUI(actions) {
     zoomFromSource(e.deltaY < 0 ? 1 : -1);
   }, { passive: false, signal });
 
-  resultFrame?.addEventListener('mousedown', (e) => {
+  prevWrap.addEventListener('mousedown', (e) => {
     resultFaceDragging = true;
     resultFaceLastPoint = { x: e.clientX, y: e.clientY };
-    resultFrame.classList.add('dragging-face');
+    prevWrap.classList.add('dragging-face');
     e.preventDefault();
   }, { signal });
 
@@ -125,14 +124,14 @@ export function initUI(actions) {
   window.addEventListener('mouseup', () => {
     if (!resultFaceDragging) return;
     resultFaceDragging = false;
-    resultFrame?.classList.remove('dragging-face');
+    prevWrap.classList.remove('dragging-face');
   }, { signal });
 
-  resultFrame?.addEventListener('touchstart', (e) => {
+  prevWrap.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1) return;
     resultFaceDragging = true;
     resultFaceLastPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    resultFrame.classList.add('dragging-face');
+    prevWrap.classList.add('dragging-face');
   }, { passive: true, signal });
 
   window.addEventListener('touchmove', (e) => {
@@ -145,7 +144,7 @@ export function initUI(actions) {
   window.addEventListener('touchend', () => {
     if (!resultFaceDragging) return;
     resultFaceDragging = false;
-    resultFrame?.classList.remove('dragging-face');
+    prevWrap.classList.remove('dragging-face');
   }, { signal });
 
   window.addEventListener('resize', () => {
@@ -452,32 +451,20 @@ function applyResultTransform() {
 }
 
 /**
- * Giữ khung kết quả cố định giống tỉ lệ và cảm giác "khung trong" ở ảnh gốc.
- * Khung này không đổi khi user kéo/zoom ảnh; chỉ đổi khi thay đổi format hoặc resize panel.
+ * Đồng bộ canvas kết quả theo đúng kích thước vùng preview bên phải.
+ * Không dùng khung lồng bên trong để giao diện nhất quán với panel ảnh gốc.
  */
 function updateResultFrameSize() {
   const wrap = document.getElementById('prev-wrap');
-  const frame = document.getElementById('result-frame');
-  if (!wrap || !frame) return;
-
-  const fmt = FMTS[state.curFmt];
-  if (!fmt) return;
+  const canvas = document.getElementById('result-canvas');
+  if (!wrap || !canvas) return;
 
   const wrapW = wrap.clientWidth;
   const wrapH = wrap.clientHeight;
   if (!wrapW || !wrapH) return;
 
-  const pad = 32;
-  const maxW = Math.max(20, wrapW - pad * 2);
-  const maxH = Math.max(20, wrapH - pad * 2);
-  const aspect = fmt.w / fmt.h;
-  const wrapAspect = maxW / maxH;
-
-  const frameW = wrapAspect > aspect ? maxH * aspect : maxW;
-  const frameH = frameW / aspect;
-
-  frame.style.width = `${Math.round(frameW)}px`;
-  frame.style.height = `${Math.round(frameH)}px`;
+  canvas.style.width = `${wrapW}px`;
+  canvas.style.height = `${wrapH}px`;
 }
 
 function zoomFromSource(dir) {
@@ -492,10 +479,10 @@ function fitFromSource() {
 }
 
 function updateResultFaceOffsetByDelta(deltaX, deltaY) {
-  const resultFrame = document.getElementById('result-frame');
-  if (!resultFrame) return;
-  const frameW = resultFrame.clientWidth || 1;
-  const frameH = resultFrame.clientHeight || 1;
+  const previewWrap = document.getElementById('prev-wrap');
+  if (!previewWrap) return;
+  const frameW = previewWrap.clientWidth || 1;
+  const frameH = previewWrap.clientHeight || 1;
 
   state.resultFaceOffsetPct.x = clamp(
     (state.resultFaceOffsetPct?.x ?? 0) + (deltaX / frameW) * 100,
