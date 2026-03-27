@@ -92,75 +92,16 @@ export function initUI(actions) {
   bindClick('btn-zoom-minus', () => applyZoom(0.85, state.cW / 2, state.cH / 2), signal);
   bindClick('btn-zoom-plus',  () => applyZoom(1.15, state.cW / 2, state.cH / 2), signal);
 
-  bindClick('btn-result-minus', () => zoomResult(-1), signal);
-  bindClick('btn-result-plus',  () => zoomResult(1),  signal);
-  bindClick('btn-result-fit',   () => zoomResultFit(), signal);
+  bindClick('btn-result-minus', () => zoomFromSource(-1), signal);
+  bindClick('btn-result-plus',  () => zoomFromSource(1),  signal);
+  bindClick('btn-result-fit',   () => fitFromSource(), signal);
 
   const prevWrap = document.getElementById('prev-wrap');
 
   prevWrap.addEventListener('wheel', (e) => {
     e.preventDefault();
-    zoomResult(e.deltaY < 0 ? 1 : -1);
+    zoomFromSource(e.deltaY < 0 ? 1 : -1);
   }, { passive: false, signal });
-
-  let rvDragging = false;
-  let rvLast = { x: 0, y: 0 };
-
-  prevWrap.addEventListener('mousedown', (e) => {
-    rvDragging = true;
-    rvLast = { x: e.clientX, y: e.clientY };
-    e.preventDefault();
-  }, { signal });
-
-  window.addEventListener('mousemove', (e) => {
-    if (!rvDragging) return;
-    state.rv.tx += e.clientX - rvLast.x;
-    state.rv.ty += e.clientY - rvLast.y;
-    rvLast = { x: e.clientX, y: e.clientY };
-    applyResultTransform();
-  }, { signal });
-
-  window.addEventListener('mouseup', () => { rvDragging = false; }, { signal });
-
-  let rvTouchLast = { x: 0, y: 0 };
-  let rvPinchLast = 0;
-
-  prevWrap.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 1) {
-      rvDragging  = true;
-      rvTouchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    } else if (e.touches.length === 2) {
-      rvDragging  = false;
-      rvPinchLast = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY,
-      );
-    }
-  }, { passive: true, signal });
-
-  prevWrap.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    if (e.touches.length === 1 && rvDragging) {
-      state.rv.tx += e.touches[0].clientX - rvTouchLast.x;
-      state.rv.ty += e.touches[0].clientY - rvTouchLast.y;
-      rvTouchLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-      applyResultTransform();
-    } else if (e.touches.length === 2 && rvPinchLast > 0) {
-      const d    = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY,
-      );
-      const next = Math.max(0.25, Math.min(8, state.rv.scale * (d / rvPinchLast)));
-      const sf   = next / state.rv.scale;
-      state.rv.tx   *= sf;
-      state.rv.ty   *= sf;
-      state.rv.scale = next;
-      rvPinchLast    = d;
-      applyResultTransform();
-    }
-  }, { passive: false, signal });
-
-  prevWrap.addEventListener('touchend', () => { rvDragging = false; rvPinchLast = 0; }, { signal });
 
   bindClick('btn-open-lightbox', () => openLightbox(), signal);
   bindClick('btn-lb-close',  () => closeLightbox(),  signal);
@@ -200,7 +141,7 @@ export function initUI(actions) {
       computeFrame();
       fitImage(false);
       if (state.faceData) centerFace();
-      zoomResultFit();
+      applyResultTransform();
       void safeRender();
       document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
     }, { signal });
@@ -449,32 +390,28 @@ export function toast(message, type = 'ok') {
 // ─── Result panel zoom ────────────────────────────────────────────────────────
 
 function zoomResult(dir) {
-  const next = Math.max(0.25, Math.min(8, state.rv.scale * (dir > 0 ? 1.4 : 0.71)));
-  const sf   = next / state.rv.scale;
-  state.rv.tx   *= sf;
-  state.rv.ty   *= sf;
-  state.rv.scale = next;
-  applyResultTransform();
+  zoomFromSource(dir);
 }
 
 function zoomResultFit() {
-  const fmt  = FMTS[state.curFmt];
-  const wrap = document.getElementById('prev-wrap');
-  const ww   = wrap?.clientWidth  ?? 0;
-  const wh   = wrap?.clientHeight ?? 0;
-  state.rv.scale = (ww > 0 && wh > 0)
-    ? Math.min(1, ww / fmt.w, wh / fmt.h)
-    : 1;
-  state.rv.tx = 0;
-  state.rv.ty = 0;
-  applyResultTransform();
+  fitFromSource();
 }
 
 function applyResultTransform() {
   const canvas = document.getElementById('result-canvas');
-  canvas.style.transform = `translate(${state.rv.tx}px, ${state.rv.ty}px) scale(${state.rv.scale})`;
-  document.getElementById('zoom-out-lbl').textContent =
-    state.rv.scale === 1 ? '1×' : `${Math.round(state.rv.scale * 100)}%`;
+  canvas.style.transform = 'translate(0px, 0px) scale(1)';
+  document.getElementById('zoom-out-lbl').textContent = `${Math.round(state.crop.scale * 100)}%`;
+}
+
+function zoomFromSource(dir) {
+  const factor = dir > 0 ? 1.15 : 0.85;
+  applyZoom(factor, state.cW / 2, state.cH / 2);
+  void safeRender();
+}
+
+function fitFromSource() {
+  fitImage(true);
+  void safeRender();
 }
 
 // ─── Lightbox ─────────────────────────────────────────────────────────────────

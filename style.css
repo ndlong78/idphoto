@@ -234,9 +234,8 @@ main { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; paddin
   background: repeating-conic-gradient(var(--card2) 0% 25%, var(--card) 0% 50%) 0 0 / 16px 16px;
   overflow: hidden; position: relative;
   display: flex; align-items: center; justify-content: center;
-  cursor: grab;
+  cursor: default;
 }
-.prev-wrap:active { cursor: grabbing; }
 
 #result-canvas {
   border-radius: 3px;
