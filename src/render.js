@@ -49,9 +49,9 @@ export async function renderResult(scale = 1) {
 }
 
 /**
- * Render 3 lớp ảnh để hiển thị "bóc tách" trong panel kết quả:
- * - composed: ảnh kết quả cuối (người + nền)
- * - background: khung ảnh visa/hộ chiếu với màu nền đang chọn
+ * Render các lớp ảnh kết quả nội bộ.
+ * - composed: ảnh kết quả cuối (người + nền đã chọn)
+ * - background: lớp nền màu phẳng theo lựa chọn
  * - faceCutout: ảnh người đã tách nền (alpha trong suốt)
  *
  * @param {number} [scale=1]
@@ -193,9 +193,10 @@ export async function renderToPreview() {
     preview.height = resultParts.composed.height;
     preview.getContext('2d')?.drawImage(resultParts.composed, 0, 0);
 
-    drawToCanvas('result-main-canvas', resultParts.composed);
-    drawToCanvas('result-bg-canvas', resultParts.background);
-    drawToCanvas('result-face-canvas', resultParts.faceCutout);
+    // Panel bóc tách chỉ giữ 1 layer hiển thị: "3) Khuôn mặt tách nền".
+    // Theo yêu cầu UX mới, layer này phải có đúng kích thước format + màu nền đang chọn,
+    // nên dùng trực tiếp ảnh composed thay vì alpha cutout trong suốt.
+    drawToCanvas('result-face-canvas', resultParts.composed);
   } finally {
     _renderLock = false;
     // Nếu có request chờ trong lúc render, thực hiện lại một lần
