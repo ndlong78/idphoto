@@ -1,4 +1,12 @@
-import { applyZoom, centerFace, cleanupCropEvents, computeFrame, fitImage, initCrop } from './crop.js';
+import {
+  applyZoom,
+  centerFace,
+  cleanupCropEvents,
+  computeFrame,
+  fitImage,
+  initCrop,
+  shiftCropByPercent,
+} from './crop.js';
 import { renderResult, renderToPreview } from './render.js';
 import { FMTS, resetState, state } from './state.js';
 import { SKIN_DEBOUNCE_MS, FEATHER_DEBOUNCE_MS, SHADOW_DEBOUNCE_MS } from './constants.js';
@@ -205,14 +213,15 @@ export function initUI(actions) {
       state.faceAdjust.yOffsetPct = faceShiftInput.valueAsNumber;
       const lbl = document.getElementById('face-yv');
       if (lbl) lbl.textContent = `${state.faceAdjust.yOffsetPct > 0 ? '+' : ''}${state.faceAdjust.yOffsetPct}%`;
-      if (state.faceData) {
-        centerFace();
-      } else {
-        // Không có faceData: vẫn cho phép kéo ảnh lên/xuống theo % khung để
-        // user chủ động chỉnh khoảng trống phía trên đỉnh đầu.
-        const deltaPct = state.faceAdjust.yOffsetPct - prevOffset;
-        state.crop.y += state.frame.h * (deltaPct / 100);
-      }
+      // FIX [IMPORTANT]: Không gọi centerFace() tại đây.
+      // Lý do:
+      // - centerFace() sẽ reset lại x/y/scale theo bbox khuôn mặt.
+      // - Nếu user đã kéo/zoom thủ công ở khung ảnh gốc, việc reset làm
+      //   preview bên phải "nhảy lệch", tạo cảm giác khung nền không giữ nguyên.
+      // - Slider "Khoảng trống đỉnh đầu" cần hoạt động như nudge tương đối,
+      //   chỉ dịch lên/xuống từ vị trí hiện tại.
+      const deltaPct = state.faceAdjust.yOffsetPct - prevOffset;
+      shiftCropByPercent(deltaPct, false);
       void safeRender();
     }, { signal });
   }
