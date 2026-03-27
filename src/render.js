@@ -189,13 +189,10 @@ export async function renderToPreview() {
     // Chỉ commit nếu đây vẫn là request mới nhất.
     if (requestVersion !== _renderVersion) return;
 
-    preview.width  = resultParts.composed.width;
-    preview.height = resultParts.composed.height;
-    preview.getContext('2d')?.drawImage(resultParts.composed, 0, 0);
-
-    drawToCanvas('result-main-canvas', resultParts.composed);
-    drawToCanvas('result-bg-canvas', resultParts.background);
-    drawToCanvas('result-face-canvas', resultParts.faceCutout);
+    // User requirement: chỉ giữ 1 ảnh duy nhất ở panel kết quả là ảnh tách nền.
+    preview.width  = resultParts.faceCutout.width;
+    preview.height = resultParts.faceCutout.height;
+    preview.getContext('2d')?.drawImage(resultParts.faceCutout, 0, 0);
   } finally {
     _renderLock = false;
     // Nếu có request chờ trong lúc render, thực hiện lại một lần
@@ -204,15 +201,6 @@ export async function renderToPreview() {
       void renderToPreview();
     }
   }
-}
-
-function drawToCanvas(canvasId, sourceCanvas) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas || !sourceCanvas) return;
-  if (typeof HTMLCanvasElement !== 'undefined' && !(canvas instanceof HTMLCanvasElement)) return;
-  canvas.width = sourceCanvas.width;
-  canvas.height = sourceCanvas.height;
-  canvas.getContext('2d')?.drawImage(sourceCanvas, 0, 0);
 }
 
 function createSolidBackgroundCanvas(width, height, bg) {
