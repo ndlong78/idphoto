@@ -400,14 +400,6 @@ export function toast(message, type = 'ok') {
 
 // ─── Result panel zoom ────────────────────────────────────────────────────────
 
-function zoomResult(dir) {
-  zoomFromSource(dir);
-}
-
-function zoomResultFit() {
-  fitFromSource();
-}
-
 function applyResultTransform() {
   updateResultFrameSize();
   const canvas = document.getElementById('result-canvas');

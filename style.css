@@ -272,42 +272,6 @@ main { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; paddin
   background: var(--card2); flex-shrink: 0;
 }
 
-.result-split-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border);
-  background: rgba(8,12,20,.35);
-}
-
-.split-card {
-  background: var(--card2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px;
-}
-
-.split-title {
-  font-size: 10px;
-  color: var(--dim);
-  margin-bottom: 6px;
-  line-height: 1.4;
-}
-
-#result-face-canvas {
-  width: 100%;
-  height: auto;
-  border-radius: 4px;
-  background: rgba(255,255,255,.03);
-}
-
-@media(max-width:980px) {
-  .result-split-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* ── ROW 2: CONTROLS GRID ── */
 .controls-row {
   display: grid;
