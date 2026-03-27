@@ -70,7 +70,16 @@ export function initUI(actions) {
   }, { signal });
 
   bindAsyncClick('btn-reprocess', actions.onReprocessAI, signal);
-  bindClick('btn-reset-face', () => { centerFace(); void safeRender(); }, signal);
+  bindClick('btn-reset-face', () => {
+    state.faceAdjust.yOffsetPct = 0;
+    syncFaceAdjustUI();
+    if (state.faceData) {
+      centerFace();
+      void safeRender();
+    } else {
+      fitImage(true);
+    }
+  }, signal);
   bindClick('btn-fit', () => fitImage(true), signal);
   bindClick('btn-zoom-minus', () => applyZoom(0.85, state.cW / 2, state.cH / 2), signal);
   bindClick('btn-zoom-plus',  () => applyZoom(1.15, state.cW / 2, state.cH / 2), signal);
@@ -168,6 +177,7 @@ export function initUI(actions) {
 
     cleanupCropEvents();
     resetState();
+    syncFaceAdjustUI();
     document.getElementById('file-input').value = '';
     setSection('upload');
   }, signal);
@@ -177,6 +187,8 @@ export function initUI(actions) {
       document.querySelectorAll('.fbtn').forEach((x) => x.classList.remove('active'));
       btn.classList.add('active');
       state.curFmt = btn.dataset.fmt;
+      state.faceAdjust.yOffsetPct = 0;
+      syncFaceAdjustUI();
       computeFrame();
       fitImage(false);
       if (state.faceData) centerFace();
@@ -185,6 +197,26 @@ export function initUI(actions) {
       document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
     }, { signal });
   });
+
+  const faceShiftInput = document.getElementById('face-y-offset');
+  if (faceShiftInput) {
+    faceShiftInput.addEventListener('input', () => {
+      const prevOffset = state.faceAdjust.yOffsetPct;
+      state.faceAdjust.yOffsetPct = faceShiftInput.valueAsNumber;
+      const lbl = document.getElementById('face-yv');
+      if (lbl) lbl.textContent = `${state.faceAdjust.yOffsetPct > 0 ? '+' : ''}${state.faceAdjust.yOffsetPct}%`;
+      if (state.faceData) {
+        centerFace();
+      } else {
+        // Không có faceData: vẫn cho phép kéo ảnh lên/xuống theo % khung để
+        // user chủ động chỉnh khoảng trống phía trên đỉnh đầu.
+        const deltaPct = state.faceAdjust.yOffsetPct - prevOffset;
+        state.crop.y += state.frame.h * (deltaPct / 100);
+      }
+      void safeRender();
+    }, { signal });
+  }
+  syncFaceAdjustUI();
 
   document.querySelectorAll('.sw').forEach((sw) => {
     sw.addEventListener('click', () => {
@@ -260,6 +292,15 @@ function bindAsyncClick(id, fn, signal) {
       el.disabled = false;
     }
   }, { signal });
+}
+
+function syncFaceAdjustUI() {
+  const input = document.getElementById('face-y-offset');
+  const label = document.getElementById('face-yv');
+  if (!input || !label) return;
+  input.value = String(state.faceAdjust.yOffsetPct ?? 0);
+  const current = Number(input.value) || 0;
+  label.textContent = `${current > 0 ? '+' : ''}${current}%`;
 }
 
 // ─── Section management ───────────────────────────────────────────────────────

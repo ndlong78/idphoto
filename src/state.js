@@ -44,6 +44,7 @@ export const state = {
   crop:  { x: 0, y: 0, scale: 1 },
   rv:    { scale: 1, tx: 0, ty: 0 },
   lb:    { scale: 1, tx: 0, ty: 0 },
+  faceAdjust: { yOffsetPct: 0 },
   section: 'upload',
 };
 
@@ -61,6 +62,7 @@ export function resetState() {
   state.curFmt    = 'passport-vn';
   state.rv        = { scale: 1, tx: 0, ty: 0 };
   state.lb        = { scale: 1, tx: 0, ty: 0 };
+  state.faceAdjust = { yOffsetPct: 0 };
 
   // Intentional: state.aiReady KHÔNG được reset.
   // AI module (ai.js) giữ nguyên removeBackgroundFn đã import và face model
