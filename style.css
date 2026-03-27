@@ -245,7 +245,10 @@ main { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; paddin
   border-radius: 2px;
   overflow: hidden;
   flex-shrink: 0;
+  cursor: grab;
+  touch-action: none;
 }
+.result-frame.dragging-face { cursor: grabbing; }
 
 #result-canvas {
   width: 100%;

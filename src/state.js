@@ -45,6 +45,9 @@ export const state = {
   rv:    { scale: 1, tx: 0, ty: 0 },
   lb:    { scale: 1, tx: 0, ty: 0 },
   faceAdjust: { yOffsetPct: 0 },
+  // Dịch chuyển khuôn mặt trong khung kết quả (đơn vị % theo kích thước output).
+  // Giữ theo % để export 600 DPI vẫn đúng bố cục như preview.
+  resultFaceOffsetPct: { x: 0, y: 0 },
   section: 'upload',
 };
 
@@ -63,6 +66,7 @@ export function resetState() {
   state.rv        = { scale: 1, tx: 0, ty: 0 };
   state.lb        = { scale: 1, tx: 0, ty: 0 };
   state.faceAdjust = { yOffsetPct: 0 };
+  state.resultFaceOffsetPct = { x: 0, y: 0 };
 
   // Intentional: state.aiReady KHÔNG được reset.
   // AI module (ai.js) giữ nguyên removeBackgroundFn đã import và face model
