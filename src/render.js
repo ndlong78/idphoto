@@ -79,7 +79,6 @@ export async function renderResult(scale = 1) {
   ctx.drawImage(state.origImg, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
 
   const imageData = ctx.getImageData(0, 0, w, h);
-  const bg = state.bgColor;
 
   if (state.aiMaskImg) {
     const mctx = maskCanvas.getContext('2d');
@@ -102,27 +101,27 @@ export async function renderResult(scale = 1) {
         }
       }
 
-      // FIX [IMPORTANT]: Áp dụng điều chỉnh TRƯỚC khi blend nền.
+      // FIX [IMPORTANT]: Áp dụng điều chỉnh TRƯỚC khi gán alpha tách nền.
       //
       // Vấn đề cũ: applyAdjustments() chạy SAU khi blend → skin/shadow
       // detection đọc pixel đã có màu nền mới. Nền màu kem (245,240,232)
       // hoặc nền xanh nhạt có thể bị nhận nhầm là da người bởi isSkinPixel,
       // làm mịn da tràn sang vùng nền.
       //
-      // Giải pháp: chạy adjustments trên ảnh gốc (chỉ có người, chưa có nền
-      // mới), sau đó mới blend. Skin/shadow detection chỉ thấy pixel người.
+      // Giải pháp: chạy adjustments trên ảnh gốc, sau đó mới áp alpha mask.
+      // Skin/shadow detection chỉ thấy pixel người.
       applyAdjustments(imageData);
-      blendAiAlpha(imageData.data, maskData.data, bg);
+      applyAlphaFromMask(imageData.data, maskData.data);
     }
   } else {
     // FIX [IMPORTANT]: Flood fill phát hiện nền dựa trên màu pixel gốc.
     // Chạy flood fill TRƯỚC applyAdjustments để brightness/contrast không làm
     // lệch ngưỡng colorDistance khi so sánh pixel corner với phần còn lại.
-    // Sau khi mask xác định xong, mới áp dụng điều chỉnh rồi blend nền.
+    // Sau khi mask xác định xong, mới áp dụng điều chỉnh rồi gán alpha.
     const mask = floodFill(imageData, FLOOD_FILL_TOLERANCE);
     featherMask(mask, w, h, getControls().feather.valueAsNumber);
     applyAdjustments(imageData);
-    applyFloodFillAlpha(imageData.data, mask, bg);
+    applyAlphaFromFloodMask(imageData.data, mask);
   }
 
   ctx.putImageData(imageData, 0, 0);
@@ -151,7 +150,7 @@ export async function renderToPreview() {
     const preview = document.getElementById('result-canvas');
     if (!preview) return;
 
-    const output  = await renderResult(1);
+    const output = await renderResult(1);
 
     // Chỉ commit nếu đây vẫn là request mới nhất.
     if (requestVersion !== _renderVersion) return;
@@ -216,24 +215,17 @@ function mapCropRect(crop, fromImg, toImg) {
 
 // ─── Mask blending ────────────────────────────────────────────────────────────
 
-function blendAiAlpha(data, mask, bg) {
+function applyAlphaFromMask(data, mask) {
   for (let i = 0; i < data.length; i += 4) {
-    const alpha = mask[i + 3] / 255;
-    const inv   = 1 - alpha;
-    data[i]     = Math.round(data[i]     * alpha + bg.r * inv);
-    data[i + 1] = Math.round(data[i + 1] * alpha + bg.g * inv);
-    data[i + 2] = Math.round(data[i + 2] * alpha + bg.b * inv);
+    data[i + 3] = mask[i + 3];
   }
 }
 
-function applyFloodFillAlpha(data, mask, bg) {
+function applyAlphaFromFloodMask(data, mask) {
   for (let i = 0; i < mask.length; i++) {
-    if (mask[i] === 0) continue;
     const alpha = mask[i] / 255;
     const di    = i * 4;
-    data[di]     = Math.round(data[di]     * (1 - alpha) + bg.r * alpha);
-    data[di + 1] = Math.round(data[di + 1] * (1 - alpha) + bg.g * alpha);
-    data[di + 2] = Math.round(data[di + 2] * (1 - alpha) + bg.b * alpha);
+    data[di + 3] = Math.round(255 * (1 - alpha));
   }
 }
 
