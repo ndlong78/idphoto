@@ -458,9 +458,10 @@ function applyResultTransform() {
  */
 function updateResultFrameSize() {
   const wrap = document.getElementById('prev-wrap');
+  const frame = document.getElementById('result-visa-frame');
   const canvas = document.getElementById('result-canvas');
   const fmt = FMTS[state.curFmt];
-  if (!wrap || !canvas) return;
+  if (!wrap || !frame || !canvas) return;
 
   // Ưu tiên dùng đúng kích thước khung crop đang hiển thị ở panel trái.
   // Nếu chưa có frame (lúc init sớm), fallback theo tỉ lệ format hiện tại.
@@ -471,12 +472,11 @@ function updateResultFrameSize() {
   if (!frameW || !frameH) return;
 
   // Khóa khung kết quả theo đúng kích thước/tỉ lệ frame trái.
-  wrap.style.width = `${frameW}px`;
-  wrap.style.height = `${frameH}px`;
-  wrap.style.minHeight = `${frameH}px`;
-  wrap.style.maxHeight = `${frameH}px`;
-  wrap.style.aspectRatio = `${frameW} / ${frameH}`;
-  wrap.style.margin = '0 auto';
+  frame.style.width = `${frameW}px`;
+  frame.style.height = `${frameH}px`;
+  frame.style.minHeight = `${frameH}px`;
+  frame.style.maxHeight = `${frameH}px`;
+  frame.style.aspectRatio = `${frameW} / ${frameH}`;
 
   // Canvas preview giữ đầy khung để không bị "stretch" sai tỉ lệ theo panel.
   canvas.style.width = '100%';
@@ -495,10 +495,10 @@ function fitFromSource() {
 }
 
 function updateResultFaceOffsetByDelta(deltaX, deltaY) {
-  const previewWrap = document.getElementById('prev-wrap');
-  if (!previewWrap) return;
-  const frameW = previewWrap.clientWidth || 1;
-  const frameH = previewWrap.clientHeight || 1;
+  const previewFrame = document.getElementById('result-visa-frame');
+  if (!previewFrame) return;
+  const frameW = previewFrame.clientWidth || 1;
+  const frameH = previewFrame.clientHeight || 1;
 
   state.resultFaceOffsetPct.x = clamp(
     (state.resultFaceOffsetPct?.x ?? 0) + (deltaX / frameW) * 100,
