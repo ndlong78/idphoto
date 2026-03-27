@@ -451,20 +451,36 @@ function applyResultTransform() {
 }
 
 /**
- * Đồng bộ canvas kết quả theo đúng kích thước vùng preview bên phải.
- * Không dùng khung lồng bên trong để giao diện nhất quán với panel ảnh gốc.
+ * Đồng bộ khung kết quả theo đúng "khung cắt" bên trái và tỉ lệ format hiện tại.
+ * Mục tiêu:
+ * - Không méo ảnh preview khi đổi format visa (30x40, 35x45, 51x51...)
+ * - Khung "Ảnh gốc" và "Kết quả" có cảm giác 1:1 khi so sánh trực quan.
  */
 function updateResultFrameSize() {
   const wrap = document.getElementById('prev-wrap');
+  const frame = document.getElementById('result-visa-frame');
   const canvas = document.getElementById('result-canvas');
-  if (!wrap || !canvas) return;
+  const fmt = FMTS[state.curFmt];
+  if (!wrap || !frame || !canvas) return;
 
-  const wrapW = wrap.clientWidth;
-  const wrapH = wrap.clientHeight;
-  if (!wrapW || !wrapH) return;
+  // Ưu tiên dùng đúng kích thước khung crop đang hiển thị ở panel trái.
+  // Nếu chưa có frame (lúc init sớm), fallback theo tỉ lệ format hiện tại.
+  const fallbackW = wrap.clientWidth || 1;
+  const fallbackH = Math.round(fallbackW / Math.max(1e-6, fmt.w / fmt.h));
+  const frameW = Math.round(state.frame?.w ?? fallbackW);
+  const frameH = Math.round(state.frame?.h ?? fallbackH);
+  if (!frameW || !frameH) return;
 
-  canvas.style.width = `${wrapW}px`;
-  canvas.style.height = `${wrapH}px`;
+  // Khóa khung kết quả theo đúng kích thước/tỉ lệ frame trái.
+  frame.style.width = `${frameW}px`;
+  frame.style.height = `${frameH}px`;
+  frame.style.minHeight = `${frameH}px`;
+  frame.style.maxHeight = `${frameH}px`;
+  frame.style.aspectRatio = `${frameW} / ${frameH}`;
+
+  // Canvas preview giữ đầy khung để không bị "stretch" sai tỉ lệ theo panel.
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
 }
 
 function zoomFromSource(dir) {
@@ -479,10 +495,10 @@ function fitFromSource() {
 }
 
 function updateResultFaceOffsetByDelta(deltaX, deltaY) {
-  const previewWrap = document.getElementById('prev-wrap');
-  if (!previewWrap) return;
-  const frameW = previewWrap.clientWidth || 1;
-  const frameH = previewWrap.clientHeight || 1;
+  const previewFrame = document.getElementById('result-visa-frame');
+  if (!previewFrame) return;
+  const frameW = previewFrame.clientWidth || 1;
+  const frameH = previewFrame.clientHeight || 1;
 
   state.resultFaceOffsetPct.x = clamp(
     (state.resultFaceOffsetPct?.x ?? 0) + (deltaX / frameW) * 100,
@@ -604,4 +620,5 @@ export async function copyToClipboard() {
 export function mountEditor() {
   setSection('editor');
   initCrop();
+  updateResultFrameSize();
 }
