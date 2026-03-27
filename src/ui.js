@@ -457,14 +457,21 @@ function applyResultTransform() {
 function updateResultFrameSize() {
   const wrap = document.getElementById('prev-wrap');
   const canvas = document.getElementById('result-canvas');
+  const cropCanvas = document.getElementById('crop-canvas');
   if (!wrap || !canvas) return;
 
-  const wrapW = wrap.clientWidth;
-  const wrapH = wrap.clientHeight;
-  if (!wrapW || !wrapH) return;
+  const frameW = cropCanvas?.clientWidth || wrap.clientWidth;
+  const frameH = cropCanvas?.clientHeight || wrap.clientHeight;
+  if (!frameW || !frameH) return;
 
-  canvas.style.width = `${wrapW}px`;
-  canvas.style.height = `${wrapH}px`;
+  // Giữ 2 khung "Ảnh gốc" và "Kết quả" luôn cùng tỷ lệ hiển thị.
+  wrap.style.height = `${frameH}px`;
+  wrap.style.minHeight = `${frameH}px`;
+  wrap.style.maxHeight = `${frameH}px`;
+  wrap.style.aspectRatio = `${frameW} / ${frameH}`;
+
+  canvas.style.width = `${frameW}px`;
+  canvas.style.height = `${frameH}px`;
 }
 
 function zoomFromSource(dir) {
@@ -604,4 +611,5 @@ export async function copyToClipboard() {
 export function mountEditor() {
   setSection('editor');
   initCrop();
+  updateResultFrameSize();
 }
