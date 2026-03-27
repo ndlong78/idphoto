@@ -85,7 +85,8 @@ export async function renderResult(scale = 1) {
     const mctx = maskCanvas.getContext('2d');
     if (mctx) {
       mctx.clearRect(0, 0, w, h);
-      mctx.drawImage(state.aiMaskImg, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
+      const maskCrop = mapCropRect(crop, state.origImg, state.aiMaskImg);
+      mctx.drawImage(state.aiMaskImg, maskCrop.x, maskCrop.y, maskCrop.w, maskCrop.h, 0, 0, w, h);
       const maskData = mctx.getImageData(0, 0, w, h);
 
       const featherRadius = getControls().feather.valueAsNumber;
@@ -185,6 +186,31 @@ function getCropRect() {
     y: (state.frame.y - state.crop.y) / s,
     w: state.frame.w / s,
     h: state.frame.h / s,
+  };
+}
+
+/**
+ * Map crop rect từ hệ trục ảnh gốc sang hệ trục ảnh nguồn khác.
+ *
+ * FIX [IMPORTANT]:
+ * aiMaskImg có thể lệch kích thước nhẹ so với origImg ở một số pipeline AI.
+ * Nếu cắt mask bằng toạ độ của ảnh gốc mà không scale, vùng blend nền sẽ bị
+ * trôi theo khi user kéo ảnh (đặc biệt nhìn rõ ở khoảng trống phía trên đầu).
+ *
+ * @param {{x:number,y:number,w:number,h:number}} crop
+ * @param {{width:number,height:number}|null} fromImg
+ * @param {{width:number,height:number}|null} toImg
+ * @returns {{x:number,y:number,w:number,h:number}}
+ */
+function mapCropRect(crop, fromImg, toImg) {
+  if (!fromImg || !toImg) return crop;
+  const sx = toImg.width  / Math.max(1, fromImg.width);
+  const sy = toImg.height / Math.max(1, fromImg.height);
+  return {
+    x: crop.x * sx,
+    y: crop.y * sy,
+    w: crop.w * sx,
+    h: crop.h * sy,
   };
 }
 

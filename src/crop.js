@@ -213,6 +213,22 @@ export function applyZoom(factor, px, py) {
   void renderToPreview();
 }
 
+/**
+ * Dịch ảnh theo phần trăm chiều cao khung cắt.
+ * Dùng cho slider "Khoảng trống đỉnh đầu" để đảm bảo:
+ * - giữ nguyên scale hiện tại
+ * - không reset lại căn chỉnh thủ công của user
+ *
+ * @param {number} deltaPct - % thay đổi so với frame.h (ví dụ +1, -2)
+ * @param {boolean} [rerender=true] - true để render preview ngay
+ */
+export function shiftCropByPercent(deltaPct, rerender = true) {
+  if (!Number.isFinite(deltaPct) || deltaPct === 0) return;
+  state.crop.y += state.frame.h * (deltaPct / 100);
+  needDraw = true;
+  if (rerender) void renderToPreview();
+}
+
 function drawCrop() {
   const canvas = document.getElementById('crop-canvas');
   const ctx = canvas.getContext('2d');
