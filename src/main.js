@@ -220,6 +220,11 @@ async function handleFile(file) {
     return;
   }
 
+  if (!(file instanceof File)) {
+    toast('Không tìm thấy file hợp lệ để xử lý.', 'err');
+    return;
+  }
+
   const validation = validateImageFile(file);
   if (!validation.ok) {
     toast(validation.error, 'err');
