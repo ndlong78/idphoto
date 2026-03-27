@@ -193,10 +193,6 @@ export async function renderToPreview() {
     preview.height = resultParts.composed.height;
     preview.getContext('2d')?.drawImage(resultParts.composed, 0, 0);
 
-    // Panel bóc tách chỉ giữ 1 layer hiển thị: "3) Khuôn mặt tách nền".
-    // Theo yêu cầu UX mới, layer này phải có đúng kích thước format + màu nền đang chọn,
-    // nên dùng trực tiếp ảnh composed thay vì alpha cutout trong suốt.
-    drawToCanvas('result-face-canvas', resultParts.composed);
   } finally {
     _renderLock = false;
     // Nếu có request chờ trong lúc render, thực hiện lại một lần
@@ -205,15 +201,6 @@ export async function renderToPreview() {
       void renderToPreview();
     }
   }
-}
-
-function drawToCanvas(canvasId, sourceCanvas) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas || !sourceCanvas) return;
-  if (typeof HTMLCanvasElement !== 'undefined' && !(canvas instanceof HTMLCanvasElement)) return;
-  canvas.width = sourceCanvas.width;
-  canvas.height = sourceCanvas.height;
-  canvas.getContext('2d')?.drawImage(sourceCanvas, 0, 0);
 }
 
 function createSolidBackgroundCanvas(width, height, bg) {
