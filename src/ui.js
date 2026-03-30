@@ -10,7 +10,7 @@ import {
 import { renderResult, renderToPreview } from './render.js';
 import { FMTS, resetState, state } from './state.js';
 import { SKIN_DEBOUNCE_MS, FEATHER_DEBOUNCE_MS, SHADOW_DEBOUNCE_MS } from './constants.js';
-import { logEvent } from './telemetry.js';
+import { logEvent, serializeErrorForTelemetry } from './telemetry.js';
 
 let toastTimer = null;
 let uiController = null;
@@ -312,8 +312,10 @@ async function safeRender() {
   try {
     await renderToPreview();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Lỗi render không xác định';
-    toast(`⚠️ Lỗi hiển thị: ${msg}`, 'err');
+    logEvent('ui.safe_render_failed', {
+      error: serializeErrorForTelemetry(err, { fallbackMessage: 'Preview render failed' }),
+    }, 'error');
+    toast('⚠️ Lỗi hiển thị. Vui lòng thử lại.', 'err');
   }
 }
 
@@ -332,9 +334,11 @@ function bindAsyncClick(id, fn, signal) {
     try {
       await fn();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Lỗi thao tác không xác định';
-      logEvent('ui.async_action_failed', { id, error: message }, 'error');
-      toast(`⚠️ ${message}`, 'err');
+      logEvent('ui.async_action_failed', {
+        id,
+        error: serializeErrorForTelemetry(err, { fallbackMessage: 'Async action failed' }),
+      }, 'error');
+      toast('⚠️ Thao tác thất bại. Vui lòng thử lại.', 'err');
     } finally {
       el.disabled = false;
     }

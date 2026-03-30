@@ -5,7 +5,7 @@ import {
   FACE_DETECT_THRESHOLD,
 } from './constants.js';
 import { assertAllowedRemoteUrl } from './security.js';
-import { logEvent } from './telemetry.js';
+import { logEvent, serializeErrorForTelemetry } from './telemetry.js';
 
 let removeBackgroundFn = null;
 let faceApi = null;
@@ -299,7 +299,10 @@ export async function detectFace(canvas) {
 
     if (!det) return null;
     return { box: det.detection.box, score: det.detection.score };
-  } catch {
+  } catch (err) {
+    logEvent('ai.face_detect_failed', {
+      error: serializeErrorForTelemetry(err, { fallbackMessage: 'Face detection failed' }),
+    }, 'warn');
     return null;
   }
 }
