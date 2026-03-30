@@ -14,34 +14,11 @@ jobs:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get changed files diff
-        id: diff
-        run: |
-          DIFF=$(git diff origin/main...HEAD -- 'src/**' | head -c 14000)
-          echo "diff<<EOF" >> $GITHUB_OUTPUT
-          echo "$DIFF" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Run Claude review
-        id: review
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          REVIEW=$(node .github/scripts/ai-review.mjs "${{ steps.diff.outputs.diff }}")
-          echo "review<<EOF" >> $GITHUB_OUTPUT
-          echo "$REVIEW" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Post PR comment
+      - name: Skip Anthropic review
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
-          body: ${{ steps.review.outputs.review }}
+          body: |
+            ## AI Code Review
+
+            ⚠️ Tính năng AI review dùng `ANTHROPIC_API_KEY` đang được tắt theo cấu hình dự án.
