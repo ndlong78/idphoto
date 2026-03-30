@@ -126,6 +126,61 @@ function shouldLogToConsole(level) {
   return eventRank <= wantedRank;
 }
 
+function truncateText(value, max = 500) {
+  const text = String(value ?? '');
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}…`;
+}
+
+/**
+ * Serialize error an toàn để đưa vào telemetry, tránh log raw object nhạy cảm.
+ * Chỉ lấy một số trường chuẩn (name/message/stack/code/status/cause).
+ *
+ * @param {unknown} err
+ * @param {{ fallbackMessage?: string }} [options]
+ * @returns {{name: string, message: string, stack?: string, code?: string, status?: number, cause?: object, type?: string}}
+ */
+export function serializeErrorForTelemetry(err, options = {}) {
+  const fallbackMessage = options.fallbackMessage || 'Unexpected error';
+
+  if (err instanceof Error) {
+    const base = {
+      name:    truncateText(err.name || 'Error', 120),
+      message: truncateText(err.message || fallbackMessage),
+    };
+
+    if (typeof err.stack === 'string' && err.stack.length > 0) {
+      base.stack = truncateText(err.stack, 1200);
+    }
+
+    const maybeCode = /** @type {unknown} */ (err.code);
+    if (typeof maybeCode === 'string' || typeof maybeCode === 'number') {
+      base.code = truncateText(maybeCode, 80);
+    }
+
+    const maybeStatus = /** @type {unknown} */ (err.status);
+    if (typeof maybeStatus === 'number') {
+      base.status = maybeStatus;
+    }
+
+    const cause = /** @type {unknown} */ (err.cause);
+    if (cause instanceof Error) {
+      base.cause = {
+        name:    truncateText(cause.name || 'Error', 120),
+        message: truncateText(cause.message || fallbackMessage),
+      };
+    }
+
+    return base;
+  }
+
+  return {
+    name:    'NonError',
+    type:    typeof err,
+    message: truncateText(err == null ? fallbackMessage : String(err)),
+  };
+}
+
 /**
  * Ghi một event telemetry vào localStorage và tùy chọn gửi lên endpoint.
  * Context lưu localStorage không chứa fingerprinting; endpoint nhận full context.

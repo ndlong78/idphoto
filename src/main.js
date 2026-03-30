@@ -2,7 +2,7 @@ import { detectFace, loadFaceModels, runBackgroundRemoval, warmupAi } from './ai
 import { nextStep, STEPS } from './pipeline.js';
 import { renderToPreview } from './render.js';
 import { state, validateImageFile } from './state.js';
-import { logEvent, setTelemetryContext } from './telemetry.js';
+import { logEvent, serializeErrorForTelemetry, setTelemetryContext } from './telemetry.js';
 import {
   copyToClipboard,
   download,
@@ -84,8 +84,12 @@ async function processFile(file) {
   pipelineStep = nextStep(pipelineStep);
   try {
     state.faceData = faceReady ? await detectFace(oc) : null;
-  } catch {
+  } catch (err) {
     state.faceData = null;
+    logEvent('pipeline.face_detect_failed', {
+      step:  'face_detection',
+      error: serializeErrorForTelemetry(err, { fallbackMessage: 'Face detect failed' }),
+    }, 'warn');
   }
   setLoadStep(2, 'done');
   setProgress(35);
@@ -99,8 +103,12 @@ async function processFile(file) {
           if (total > 0) setProgress(35 + Math.round((current / total) * 50));
         })
       : null;
-  } catch {
+  } catch (err) {
     state.aiMaskImg = null;
+    logEvent('pipeline.bg_remove_failed_unhandled', {
+      step:  'background_removal',
+      error: serializeErrorForTelemetry(err, { fallbackMessage: 'Background removal failed' }),
+    }, 'warn');
   }
   setLoadStep(3, 'done');
 
@@ -244,14 +252,13 @@ async function handleFile(file) {
     state.origImg  = await loadImageFromFile(file);
     await processFile(file);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Upload thất bại. Vui lòng thử lại.';
-    toast(msg, 'err');
+    toast('Upload thất bại. Vui lòng thử lại.', 'err');
     setSection('upload');
     logEvent('pipeline.failed', {
       fileName: file.name,
       fileSize: file.size,
       mimeType: file.type,
-      error:    msg,
+      error:    serializeErrorForTelemetry(err, { fallbackMessage: 'Upload failed' }),
     }, 'error');
   } finally {
     isProcessing = false;
