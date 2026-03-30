@@ -25,6 +25,7 @@ let resultFaceLastPoint = { x: 0, y: 0 };
 let skinDebounceTimer    = 0;
 let featherDebounceTimer = 0;
 let shadowDebounceTimer  = 0;
+const missingDomNodes = new Set();
 
 /**
  * Khởi tạo toàn bộ event listener của UI. Có thể gọi lại sau resetState().
@@ -54,8 +55,9 @@ export function initUI(actions) {
   featherDebounceTimer = 0;
   shadowDebounceTimer  = 0;
 
-  const uploadZone = document.getElementById('upload-zone');
-  const fileInput  = document.getElementById('file-input');
+  const uploadZone = mustGetEl('upload-zone', 'initUI');
+  const fileInput  = mustGetEl('file-input', 'initUI');
+  if (!uploadZone || !fileInput) return;
 
   uploadZone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -100,7 +102,8 @@ export function initUI(actions) {
   bindClick('btn-result-plus',  () => zoomFromSource(1),  signal);
   bindClick('btn-result-fit',   () => fitFromSource(), signal);
 
-  const prevWrap = document.getElementById('prev-wrap');
+  const prevWrap = mustGetEl('prev-wrap', 'initUI');
+  if (!prevWrap) return;
   updateResultFrameSize();
 
   prevWrap.addEventListener('wheel', (e) => {
@@ -179,7 +182,8 @@ export function initUI(actions) {
     cleanupCropEvents();
     resetState();
     syncFaceAdjustUI();
-    document.getElementById('file-input').value = '';
+    const resetInput = getOptionalEl('file-input');
+    if (resetInput) resetInput.value = '';
     setSection('upload');
   }, signal);
 
@@ -197,7 +201,8 @@ export function initUI(actions) {
       updateResultFrameSize();
       applyResultTransform();
       void safeRender();
-      document.getElementById('size-badge').textContent = FMTS[state.curFmt].lbl;
+      const sizeBadge = getOptionalEl('size-badge');
+      if (sizeBadge) sizeBadge.textContent = FMTS[state.curFmt].lbl;
     }, { signal });
   });
 
@@ -206,7 +211,7 @@ export function initUI(actions) {
     faceShiftInput.addEventListener('input', () => {
       const prevOffset = state.faceAdjust.yOffsetPct;
       state.faceAdjust.yOffsetPct = faceShiftInput.valueAsNumber;
-      const lbl = document.getElementById('face-yv');
+      const lbl = getOptionalEl('face-yv');
       if (lbl) lbl.textContent = `${state.faceAdjust.yOffsetPct > 0 ? '+' : ''}${state.faceAdjust.yOffsetPct}%`;
       // FIX [IMPORTANT]: Không gọi centerFace() tại đây.
       // Lý do:
@@ -233,9 +238,14 @@ export function initUI(actions) {
   });
 
   [['bright', 'bv'], ['contrast', 'cv'], ['sharp', 'sv'], ['skin', 'skv'], ['feather', 'fv'], ['shadow', 'shadv']].forEach(([id, lblId]) => {
-    const input = document.getElementById(id);
+    const input = getOptionalEl(id);
+    if (!input) {
+      reportMissingDomNode(id, { critical: true, context: 'initUI.slider' });
+      return;
+    }
     input.addEventListener('input', () => {
-      document.getElementById(lblId).textContent = input.value;
+      const lbl = getOptionalEl(lblId);
+      if (lbl) lbl.textContent = input.value;
 
       if (id === 'skin') {
         clearTimeout(skinDebounceTimer);
@@ -252,15 +262,48 @@ export function initUI(actions) {
     }, { signal });
   });
 
-  document.getElementById('zoom-range').addEventListener('input', (e) => {
-    const value = e.target.valueAsNumber / 100;
-    applyZoom(value / state.crop.scale, state.cW / 2, state.cH / 2);
-  }, { signal });
+  const zoomRange = getOptionalEl('zoom-range');
+  if (zoomRange) {
+    zoomRange.addEventListener('input', (e) => {
+      const value = e.target.valueAsNumber / 100;
+      applyZoom(value / state.crop.scale, state.cW / 2, state.cH / 2);
+    }, { signal });
+  } else {
+    reportMissingDomNode('zoom-range', { critical: true, context: 'initUI' });
+  }
 
-  document.getElementById('result-lightbox').addEventListener('click', closeLightbox, { signal });
-  document.querySelector('.lightbox-inner').addEventListener('click', (e) => e.stopPropagation(), { signal });
+  const resultLightbox = getOptionalEl('result-lightbox');
+  if (resultLightbox) {
+    resultLightbox.addEventListener('click', closeLightbox, { signal });
+  } else {
+    reportMissingDomNode('result-lightbox', { critical: true, context: 'initUI' });
+  }
+
+  const lightboxInner = document.querySelector('.lightbox-inner');
+  if (lightboxInner) {
+    lightboxInner.addEventListener('click', (e) => e.stopPropagation(), { signal });
+  } else {
+    reportMissingDomNode('.lightbox-inner', { context: 'initUI' });
+  }
 
   setSection('upload');
+}
+
+function getOptionalEl(id) {
+  return document.getElementById(id);
+}
+
+function mustGetEl(id, context) {
+  const el = getOptionalEl(id);
+  if (!el) reportMissingDomNode(id, { critical: true, context });
+  return el;
+}
+
+function reportMissingDomNode(id, { critical = false, context = 'ui' } = {}) {
+  const key = `${context}:${id}`;
+  if (missingDomNodes.has(key)) return;
+  missingDomNodes.add(key);
+  logEvent('ui.dom_node_missing', { id, context, critical }, critical ? 'error' : 'warn');
 }
 
 // ─── Safe render ──────────────────────────────────────────────────────────────
@@ -277,12 +320,12 @@ async function safeRender() {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function bindClick(id, fn, signal) {
-  const el = document.getElementById(id);
+  const el = getOptionalEl(id);
   if (el) el.addEventListener('click', fn, { signal });
 }
 
 function bindAsyncClick(id, fn, signal) {
-  const el = document.getElementById(id);
+  const el = getOptionalEl(id);
   if (!el) return;
   el.addEventListener('click', async () => {
     el.disabled = true;
@@ -299,8 +342,8 @@ function bindAsyncClick(id, fn, signal) {
 }
 
 function syncFaceAdjustUI() {
-  const input = document.getElementById('face-y-offset');
-  const label = document.getElementById('face-yv');
+  const input = getOptionalEl('face-y-offset');
+  const label = getOptionalEl('face-yv');
   if (!input || !label) return;
   input.value = String(state.faceAdjust.yOffsetPct ?? 0);
   const current = Number(input.value) || 0;
@@ -317,17 +360,21 @@ function syncFaceAdjustUI() {
 export function setSection(section) {
   state.section = section;
   ['upload', 'loading', 'editor'].forEach((s) => {
-    document.getElementById(`${s}-section`).style.display = 'none';
+    const sectionEl = getOptionalEl(`${s}-section`);
+    if (sectionEl) sectionEl.style.display = 'none';
   });
 
   if (section === 'upload') {
-    document.getElementById('upload-section').style.display = 'flex';
+    const uploadSection = getOptionalEl('upload-section');
+    if (uploadSection) uploadSection.style.display = 'flex';
     setSteps(1);
   } else if (section === 'loading') {
-    document.getElementById('loading-section').style.display = 'flex';
+    const loadingSection = getOptionalEl('loading-section');
+    if (loadingSection) loadingSection.style.display = 'flex';
     setSteps(2);
   } else {
-    document.getElementById('editor-section').style.display = 'block';
+    const editorSection = getOptionalEl('editor-section');
+    if (editorSection) editorSection.style.display = 'block';
   }
 }
 
@@ -338,7 +385,8 @@ export function setSection(section) {
  */
 export function setSteps(active) {
   for (let i = 1; i <= 4; i++) {
-    const el = document.getElementById(`s${i}`);
+    const el = getOptionalEl(`s${i}`);
+    if (!el) continue;
     el.className = 'step';
     if (i < active)       el.classList.add('done');
     else if (i === active) el.classList.add('active');
@@ -352,8 +400,10 @@ export function setSteps(active) {
  * @param {string} sub - Phụ đề (có thể rỗng)
  */
 export function setLoad(title, sub) {
-  document.getElementById('load-title').textContent = title;
-  document.getElementById('load-sub').textContent   = sub;
+  const loadTitle = getOptionalEl('load-title');
+  const loadSub = getOptionalEl('load-sub');
+  if (loadTitle) loadTitle.textContent = title;
+  if (loadSub) loadSub.textContent = sub;
 }
 
 /**
@@ -362,7 +412,8 @@ export function setLoad(title, sub) {
  * @param {number} percent - Phần trăm hoàn thành (0–100)
  */
 export function setProgress(percent) {
-  document.getElementById('pfill').style.width = `${percent}%`;
+  const pfill = getOptionalEl('pfill');
+  if (pfill) pfill.style.width = `${percent}%`;
 }
 
 /**
@@ -372,7 +423,8 @@ export function setProgress(percent) {
  * @param {'active'|'done'|''} status - Trạng thái hiển thị
  */
 export function setLoadStep(step, status) {
-  const el = document.getElementById(`ls${step}`);
+  const el = getOptionalEl(`ls${step}`);
+  if (!el) return;
   el.className = `ls ${status}`;
 }
 
@@ -382,8 +434,9 @@ export function setLoadStep(step, status) {
  * @param {number|null} score - Điểm tin cậy (0–1), null nếu không tìm thấy mặt
  */
 export function setFaceStatus(score) {
-  const bar = document.getElementById('face-bar');
-  const txt = document.getElementById('face-txt');
+  const bar = getOptionalEl('face-bar');
+  const txt = getOptionalEl('face-txt');
+  if (!bar || !txt) return;
   if (score !== null) {
     bar.className   = 'fstatus ok';
     txt.textContent = `Nhận dạng khuôn mặt (${Math.round(score * 100)}%)`;
@@ -400,7 +453,8 @@ export function setFaceStatus(score) {
  * @param {string} [reason=''] - Lý do thất bại (nếu có)
  */
 export function setAiInfoBar(success, reason = '') {
-  const bar = document.getElementById('ai-info-bar');
+  const bar = getOptionalEl('ai-info-bar');
+  if (!bar) return;
   bar.replaceChildren();
 
   if (success) {
@@ -434,7 +488,8 @@ export function setAiInfoBar(success, reason = '') {
  * @param {'ok'|'err'} [type='ok'] - Loại thông báo (màu sắc)
  */
 export function toast(message, type = 'ok') {
-  const el = document.getElementById('toast');
+  const el = getOptionalEl('toast');
+  if (!el) return;
   el.textContent = message;
   el.className   = `show ${type}`;
   if (toastTimer) window.clearTimeout(toastTimer);
@@ -445,9 +500,11 @@ export function toast(message, type = 'ok') {
 
 function applyResultTransform() {
   updateResultFrameSize();
-  const canvas = document.getElementById('result-canvas');
+  const canvas = getOptionalEl('result-canvas');
+  if (!canvas) return;
   canvas.style.transform = 'translate(0px, 0px) scale(1)';
-  document.getElementById('zoom-out-lbl').textContent = `${Math.round(state.crop.scale * 100)}%`;
+  const zoomOutLabel = getOptionalEl('zoom-out-lbl');
+  if (zoomOutLabel) zoomOutLabel.textContent = `${Math.round(state.crop.scale * 100)}%`;
 }
 
 /**
@@ -457,9 +514,9 @@ function applyResultTransform() {
  * - Khung "Ảnh gốc" và "Kết quả" có cảm giác 1:1 khi so sánh trực quan.
  */
 function updateResultFrameSize() {
-  const wrap = document.getElementById('prev-wrap');
-  const frame = document.getElementById('result-visa-frame');
-  const canvas = document.getElementById('result-canvas');
+  const wrap = getOptionalEl('prev-wrap');
+  const frame = getOptionalEl('result-visa-frame');
+  const canvas = getOptionalEl('result-canvas');
   const fmt = FMTS[state.curFmt];
   if (!wrap || !frame || !canvas) return;
 
@@ -495,7 +552,7 @@ function fitFromSource() {
 }
 
 function updateResultFaceOffsetByDelta(deltaX, deltaY) {
-  const previewFrame = document.getElementById('result-visa-frame');
+  const previewFrame = getOptionalEl('result-visa-frame');
   if (!previewFrame) return;
   const frameW = previewFrame.clientWidth || 1;
   const frameH = previewFrame.clientHeight || 1;
@@ -520,13 +577,14 @@ function clamp(value, min, max) {
 // ─── Lightbox ─────────────────────────────────────────────────────────────────
 
 function openLightbox() {
-  const src = document.getElementById('result-canvas');
-  if (!src.width) {
+  const src = getOptionalEl('result-canvas');
+  if (!src || !src.width) {
     toast('Chưa có ảnh để xem', 'err');
     return;
   }
 
-  const dst = document.getElementById('lightbox-canvas');
+  const dst = mustGetEl('lightbox-canvas', 'openLightbox');
+  if (!dst) return;
   dst.width  = src.width;
   dst.height = src.height;
   dst.getContext('2d')?.drawImage(src, 0, 0);
@@ -538,11 +596,13 @@ function openLightbox() {
   state.lb.ty    = 0;
   applyLightboxTransform();
 
-  document.getElementById('result-lightbox').classList.add('open');
+  const resultLightbox = mustGetEl('result-lightbox', 'openLightbox');
+  if (resultLightbox) resultLightbox.classList.add('open');
 }
 
 function closeLightbox() {
-  document.getElementById('result-lightbox').classList.remove('open');
+  const resultLightbox = getOptionalEl('result-lightbox');
+  if (resultLightbox) resultLightbox.classList.remove('open');
 }
 
 function lightboxZoom(dir) {
@@ -551,7 +611,8 @@ function lightboxZoom(dir) {
 }
 
 function lightboxZoomFit() {
-  const c    = document.getElementById('lightbox-canvas');
+  const c = getOptionalEl('lightbox-canvas');
+  if (!c) return;
   const maxW = window.innerWidth  * 0.88;
   const maxH = window.innerHeight * 0.78;
   state.lb.scale = Math.min(1, maxW / c.width, maxH / c.height);
@@ -561,11 +622,13 @@ function lightboxZoomFit() {
 }
 
 function applyLightboxTransform() {
-  const c = document.getElementById('lightbox-canvas');
+  const c = getOptionalEl('lightbox-canvas');
+  if (!c) return;
   c.style.width     = `${Math.round(c.width  * state.lb.scale)}px`;
   c.style.height    = `${Math.round(c.height * state.lb.scale)}px`;
   c.style.transform = `translate(${state.lb.tx}px, ${state.lb.ty}px)`;
-  document.getElementById('lb-lbl').textContent = `${Math.round(state.lb.scale * 100)}%`;
+  const lbLabel = getOptionalEl('lb-lbl');
+  if (lbLabel) lbLabel.textContent = `${Math.round(state.lb.scale * 100)}%`;
 }
 
 // ─── Download ─────────────────────────────────────────────────────────────────
@@ -598,7 +661,8 @@ export async function download(mode) {
  * @returns {Promise<{method: 'clipboard'|'newtab'}>}
  */
 export async function copyToClipboard() {
-  const canvas = document.getElementById('result-canvas');
+  const canvas = mustGetEl('result-canvas', 'copyToClipboard');
+  if (!canvas) throw new Error('Thiếu vùng kết quả để sao chép');
   const blob = await new Promise((resolve, reject) => {
     canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Không thể tạo blob')), 'image/png');
   });
