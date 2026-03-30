@@ -28,6 +28,7 @@ let _blurOut = null;
 let _renderLock    = false;
 let _renderPending = false;
 let _renderVersion = 0;
+let _previewRenderParts = renderResultParts;
 
 /** Lấy canvas tái sử dụng với kích thước mong muốn */
 function getCanvas(store, w, h) {
@@ -184,7 +185,7 @@ export async function renderToPreview() {
     const preview = document.getElementById('result-canvas');
     if (!preview) return;
 
-    const resultParts  = await renderResultParts(1);
+    const resultParts  = await _previewRenderParts(1);
 
     // Chỉ commit nếu đây vẫn là request mới nhất.
     if (requestVersion !== _renderVersion) return;
@@ -199,6 +200,26 @@ export async function renderToPreview() {
       void renderToPreview();
     }
   }
+}
+
+/**
+ * Test hook: thay thế hàm render parts cho preview để mô phỏng async ordering.
+ * Không dùng trong luồng production.
+ *
+ * @param {(scale:number)=>Promise<{composed: HTMLCanvasElement, background: HTMLCanvasElement, faceCutout: HTMLCanvasElement}>} fn
+ */
+export function __setPreviewRenderPartsForTest(fn) {
+  _previewRenderParts = fn;
+}
+
+/**
+ * Test hook: reset trạng thái render lock/version về mặc định.
+ */
+export function __resetPreviewRenderStateForTest() {
+  _renderLock = false;
+  _renderPending = false;
+  _renderVersion = 0;
+  _previewRenderParts = renderResultParts;
 }
 
 function composeResultLayers(parts, _scale = 1, canvas = null) {
