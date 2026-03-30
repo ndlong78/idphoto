@@ -21,6 +21,38 @@ import {
 let pipelineStep = STEPS.IDLE;
 let isProcessing = false;
 
+
+export function assertBrowserFileInput(file, context = 'main.handleFile') {
+  if (!(file instanceof File)) {
+    throw new TypeError(`[${context}] File input không hợp lệ (null/undefined/fake object).`);
+  }
+
+  const hasShape = typeof file.name === 'string'
+    && typeof file.type === 'string'
+    && typeof file.size === 'number'
+    && Number.isFinite(file.size)
+    && file.size >= 0;
+  if (!hasShape) {
+    throw new TypeError(`[${context}] File object không đúng shape chuẩn của browser.`);
+  }
+
+  return file;
+}
+
+function getOrigCanvasOrThrow() {
+  const oc = document.getElementById('orig-canvas');
+  if (!(oc instanceof HTMLCanvasElement)) {
+    throw new Error('[main.processFile] State/UI chưa sẵn sàng: thiếu #orig-canvas hợp lệ.');
+  }
+  return oc;
+}
+
+function assertReadyForReprocess() {
+  if (!(state.origFile instanceof File)) {
+    throw new Error('[main.reprocessAI] State chưa sẵn sàng: chưa có file gốc hợp lệ.');
+  }
+}
+
 async function withTimeoutFallback(promise, timeoutMs, fallbackValue) {
   let timerId = 0;
   try {
@@ -74,7 +106,10 @@ async function processFile(file) {
   setLoadStep(1, 'done');
   setProgress(20);
 
-  const oc = document.getElementById('orig-canvas');
+  const oc = getOrigCanvasOrThrow();
+  if (!state.origImg) {
+    throw new Error('[main.processFile] State chưa sẵn sàng: thiếu ảnh gốc đã load.');
+  }
   oc.width  = state.origImg.width;
   oc.height = state.origImg.height;
   oc.getContext('2d')?.drawImage(state.origImg, 0, 0);
@@ -151,8 +186,13 @@ async function reprocessAI() {
     return;
   }
 
-  if (!state.origFile) {
-    toast('Chưa có ảnh', 'err');
+  try {
+    assertReadyForReprocess();
+  } catch (err) {
+    toast('Chưa có ảnh hợp lệ để xử lý lại.', 'err');
+    logEvent('pipeline.reprocess_ai_guard_failed', {
+      error: serializeErrorForTelemetry(err, { fallbackMessage: 'Reprocess guard failed' }),
+    }, 'warn');
     return;
   }
 
@@ -228,18 +268,25 @@ async function handleFile(file) {
     return;
   }
 
-  if (!(file instanceof File)) {
+  let safeFile;
+  try {
+    safeFile = assertBrowserFileInput(file);
+  } catch (err) {
     toast('Không tìm thấy file hợp lệ để xử lý.', 'err');
+    logEvent('upload.guard_failed', {
+      error: serializeErrorForTelemetry(err, { fallbackMessage: 'Upload guard failed' }),
+      valueType: typeof file,
+    }, 'warn');
     return;
   }
 
-  const validation = validateImageFile(file);
+  const validation = validateImageFile(safeFile);
   if (!validation.ok) {
     toast(validation.error, 'err');
     logEvent('upload.validation_failed', {
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
+      fileName: safeFile.name,
+      fileSize: safeFile.size,
+      mimeType: safeFile.type,
       error:    validation.error,
     }, 'error');
     return;
@@ -248,16 +295,16 @@ async function handleFile(file) {
   try {
     isProcessing   = true;
     pipelineStep   = STEPS.IDLE;
-    state.origFile = file;
-    state.origImg  = await loadImageFromFile(file);
-    await processFile(file);
+    state.origFile = safeFile;
+    state.origImg  = await loadImageFromFile(safeFile);
+    await processFile(safeFile);
   } catch (err) {
     toast('Upload thất bại. Vui lòng thử lại.', 'err');
     setSection('upload');
     logEvent('pipeline.failed', {
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
+      fileName: safeFile.name,
+      fileSize: safeFile.size,
+      mimeType: safeFile.type,
       error:    serializeErrorForTelemetry(err, { fallbackMessage: 'Upload failed' }),
     }, 'error');
   } finally {

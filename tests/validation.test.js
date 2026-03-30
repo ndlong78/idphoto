@@ -77,3 +77,22 @@ test('validateImageFile: từ chối mime image/svg+xml dù bắt đầu bằng 
   const file = new File(['<svg></svg>'], 'vector.svg', { type: 'image/svg+xml' });
   assert.equal(validateImageFile(file).ok, false);
 });
+
+
+test('validateImageFile: từ chối undefined/null fail-fast', () => {
+  const undefinedCase = validateImageFile(undefined);
+  const nullCase = validateImageFile(null);
+
+  assert.equal(undefinedCase.ok, false);
+  assert.equal(nullCase.ok, false);
+  assert.match(undefinedCase.error, /state\.validateImageFile/i);
+  assert.match(nullCase.error, /state\.validateImageFile/i);
+});
+
+test('validateImageFile: từ chối fake object không phải File thật', () => {
+  const fakeFile = { name: 'photo.jpg', type: 'image/jpeg', size: 1024 };
+  const result = validateImageFile(fakeFile);
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /không hợp lệ|state\.validateImageFile/i);
+});

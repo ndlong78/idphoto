@@ -82,6 +82,17 @@ export function resetState() {
  * @returns {{ok: boolean, error?: string}} Kết quả kiểm tra
  */
 export function validateImageFile(file) {
+  if (!(file instanceof File)) {
+    return { ok: false, error: '[state.validateImageFile] File input không hợp lệ hoặc chưa sẵn sàng.' };
+  }
+
+  const hasName = typeof file.name === 'string' && file.name.length > 0;
+  const hasType = typeof file.type === 'string';
+  const hasSize = typeof file.size === 'number' && Number.isFinite(file.size) && file.size >= 0;
+  if (!hasName || !hasType || !hasSize) {
+    return { ok: false, error: '[state.validateImageFile] File object không đúng shape chuẩn của browser.' };
+  }
+
   const mime = String(file.type || '').toLowerCase();
   const hasImageMime = /^(image\/jpeg|image\/png|image\/webp|image\/heic|image\/heif)$/.test(mime);
   const hasImageExt  = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
