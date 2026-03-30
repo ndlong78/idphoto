@@ -81,7 +81,7 @@ test('journey: upload hợp lệ -> AI fallback render -> export', async () => {
   };
 
   try {
-    const file = { name: 'avatar.jpg', type: 'image/jpeg', size: 1024 * 1024 };
+    const file = new File([new Uint8Array(1024)], 'avatar.jpg', { type: 'image/jpeg' });
     const validation = validateImageFile(file);
     assert.equal(validation.ok, true, 'Upload JPG hợp lệ phải pass validateImageFile');
 
