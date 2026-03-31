@@ -49,11 +49,26 @@ export function validateAiSourceVersions() {
     if (!url.includes(`@${BG_REMOVAL_VERSION}`)) {
       throw new Error(`BG_REMOVAL_MODULE_SOURCES phải pin @${BG_REMOVAL_VERSION}: ${url}`);
     }
+    if (!/^https:\/\/(esm\.sh|cdn\.jsdelivr\.net)\//.test(url)) {
+      throw new Error(`BG_REMOVAL_MODULE_SOURCES chỉ cho phép esm.sh hoặc cdn.jsdelivr.net: ${url}`);
+    }
   }
 
   for (const source of BG_REMOVAL_DATA_SOURCES) {
     if (!source.publicPath.includes(`/${BG_REMOVAL_VERSION}/`)) {
       throw new Error(`BG_REMOVAL_DATA_SOURCES phải pin /${BG_REMOVAL_VERSION}/: ${source.publicPath}`);
+    }
+    if (!source.publicPath.startsWith('https://staticimgly.com/')) {
+      throw new Error(`BG_REMOVAL_DATA_SOURCES chỉ cho phép staticimgly.com: ${source.publicPath}`);
+    }
+  }
+
+  for (const url of FACE_API_SCRIPT_SOURCES) {
+    if (!url.startsWith('https://cdn.jsdelivr.net/')) {
+      throw new Error(`FACE_API_SCRIPT_SOURCES chỉ cho phép cdn.jsdelivr.net: ${url}`);
+    }
+    if (!url.includes('@0.22.2/')) {
+      throw new Error(`FACE_API_SCRIPT_SOURCES phải pin @0.22.2: ${url}`);
     }
   }
 }

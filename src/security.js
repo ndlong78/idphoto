@@ -15,6 +15,13 @@ const ALLOWED_ORIGINS = new Set([
   'https://esm.sh',
 ]);
 
+const SAFE_TELEMETRY_PROTOCOLS = new Set(['https:']);
+const SAFE_TELEMETRY_LOCAL_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+]);
+
 /**
  * Kiểm tra URL có nằm trong allowlist HTTPS không.
  *
@@ -52,4 +59,23 @@ export function assertAllowedRemoteUrl(url, context = 'remote_resource') {
  */
 export function getAllowedOrigins() {
   return [...ALLOWED_ORIGINS];
+}
+
+/**
+ * Validate endpoint telemetry để tránh gửi nhầm dữ liệu sang endpoint không an toàn.
+ * - Production: chỉ cho phép HTTPS.
+ * - Local dev: cho phép localhost/127.0.0.1/[::1] qua HTTP.
+ *
+ * @param {string} endpoint
+ * @returns {boolean}
+ */
+export function isAllowedTelemetryEndpoint(endpoint) {
+  try {
+    const parsed = new URL(endpoint);
+    if (SAFE_TELEMETRY_PROTOCOLS.has(parsed.protocol)) return true;
+    if (parsed.protocol !== 'http:') return false;
+    return SAFE_TELEMETRY_LOCAL_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
+  }
 }

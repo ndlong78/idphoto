@@ -40,6 +40,9 @@ Tạo file `.env` hoặc inject vào `window.__IDPHOTO_CONFIG__` trước khi lo
 ```
 
 Tham khảo `.env.example` để biết thêm chi tiết.
+`telemetryEndpoint` chỉ chấp nhận:
+- `https://...` cho production
+- `http://localhost...`, `http://127.0.0.1...`, `http://[::1]...` cho local dev
 
 ## Cấu trúc dự án
 
@@ -97,6 +100,7 @@ Sau lần đầu, model được cache bởi trình duyệt.
 - ✅ Telemetry mặc định tắt (chỉ bật khi cấu hình endpoint)
 - ✅ Dữ liệu fingerprinting (UA, platform, memory) **không** lưu vào localStorage
 - ✅ Tất cả URL remote được kiểm tra qua allowlist trước khi tải
+- ⚠️ Tài nguyên AI vẫn được tải runtime từ CDN đã allowlist; để giảm rủi ro supply-chain, nên self-host ở môi trường production quan trọng
 
 ## Giấy phép
 

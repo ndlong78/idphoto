@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertAllowedRemoteUrl, isAllowedRemoteUrl } from '../src/security.js';
+import { assertAllowedRemoteUrl, isAllowedRemoteUrl, isAllowedTelemetryEndpoint } from '../src/security.js';
 
 // FIX: esm.sh đã được thêm vào allowlist (xem src/security.js) vì
 // @imgly/background-removal@1.5.5 trên jsdelivr có internal dynamic import
@@ -48,4 +48,12 @@ test('assertAllowedRemoteUrl: không throw với URL hợp lệ trong allowlist'
   assert.doesNotThrow(() => assertAllowedRemoteUrl('https://cdn.jsdelivr.net/npm/a@1.0.0/file.js', 'unit_test'));
   assert.doesNotThrow(() => assertAllowedRemoteUrl('https://staticimgly.com/model.bin', 'unit_test'));
   assert.doesNotThrow(() => assertAllowedRemoteUrl('https://esm.sh/@imgly/background-removal@1.5.5?bundle', 'unit_test'));
+});
+
+test('isAllowedTelemetryEndpoint: chỉ cho https hoặc localhost http', () => {
+  assert.equal(isAllowedTelemetryEndpoint('https://telemetry.example.com/events'), true);
+  assert.equal(isAllowedTelemetryEndpoint('http://localhost:4318/events'), true);
+  assert.equal(isAllowedTelemetryEndpoint('http://127.0.0.1:4318/events'), true);
+  assert.equal(isAllowedTelemetryEndpoint('http://evil.example.com/events'), false);
+  assert.equal(isAllowedTelemetryEndpoint('javascript:alert(1)'), false);
 });

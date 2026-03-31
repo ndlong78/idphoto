@@ -15,6 +15,15 @@ let dragging = false;
 let lastPoint = { x: 0, y: 0 };
 let lastPinch = 0;
 let needDraw = false;
+let previewRafId = 0;
+
+function schedulePreviewRender() {
+  if (previewRafId) return;
+  previewRafId = requestAnimationFrame(() => {
+    previewRafId = 0;
+    void renderToPreview();
+  });
+}
 
 /**
  * Khởi tạo canvas crop: thiết lập kích thước, sự kiện chuột/cảm ứng, và vòng lặp animationFrame.
@@ -59,11 +68,11 @@ export function initCrop() {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    state.crop.x += mx - lastPoint.x;
-    state.crop.y += my - lastPoint.y;
-    lastPoint = { x: mx, y: my };
-    needDraw = true;
-    void renderToPreview();
+      state.crop.x += mx - lastPoint.x;
+      state.crop.y += my - lastPoint.y;
+      lastPoint = { x: mx, y: my };
+      needDraw = true;
+      schedulePreviewRender();
   }, { signal });
 
   window.addEventListener('mouseup', () => { dragging = false; }, { signal });
@@ -92,7 +101,7 @@ export function initCrop() {
       state.crop.y += e.touches[0].clientY - lastPoint.y;
       lastPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       needDraw = true;
-      void renderToPreview();
+      schedulePreviewRender();
     } else if (e.touches.length === 2) {
       const d = distance(e.touches[0], e.touches[1]);
       if (lastPinch > 0) {
@@ -131,6 +140,10 @@ export function cleanupCropEvents() {
   if (animId) {
     cancelAnimationFrame(animId);
     animId = null;
+  }
+  if (previewRafId) {
+    cancelAnimationFrame(previewRafId);
+    previewRafId = 0;
   }
 }
 
@@ -173,7 +186,7 @@ export function fitImage(rerender) {
   state.crop.y = (state.cH - state.origImg.height * state.crop.scale) / 2;
   needDraw = true;
   syncZoomUI();
-  if (rerender) void renderToPreview();
+  if (rerender) schedulePreviewRender();
 }
 
 /**
@@ -210,7 +223,7 @@ export function applyZoom(factor, px, py) {
   state.crop.scale = ns;
   needDraw = true;
   syncZoomUI();
-  void renderToPreview();
+  schedulePreviewRender();
 }
 
 /**
@@ -226,7 +239,7 @@ export function shiftCropByPercent(deltaPct, rerender = true) {
   if (!Number.isFinite(deltaPct) || deltaPct === 0) return;
   state.crop.y += state.frame.h * (deltaPct / 100);
   needDraw = true;
-  if (rerender) void renderToPreview();
+  if (rerender) schedulePreviewRender();
 }
 
 function drawCrop() {
