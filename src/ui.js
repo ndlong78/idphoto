@@ -25,6 +25,7 @@ let resultFaceLastPoint = { x: 0, y: 0 };
 let skinDebounceTimer    = 0;
 let featherDebounceTimer = 0;
 let shadowDebounceTimer  = 0;
+let renderRafId = 0;
 const missingDomNodes = new Set();
 
 /**
@@ -54,6 +55,10 @@ export function initUI(actions) {
   skinDebounceTimer    = 0;
   featherDebounceTimer = 0;
   shadowDebounceTimer  = 0;
+  if (renderRafId) {
+    cancelAnimationFrame(renderRafId);
+    renderRafId = 0;
+  }
 
   const uploadZone = mustGetEl('upload-zone', 'initUI');
   const fileInput  = mustGetEl('file-input', 'initUI');
@@ -178,6 +183,10 @@ export function initUI(actions) {
     skinDebounceTimer    = 0;
     featherDebounceTimer = 0;
     shadowDebounceTimer  = 0;
+    if (renderRafId) {
+      cancelAnimationFrame(renderRafId);
+      renderRafId = 0;
+    }
 
     cleanupCropEvents();
     resetState();
@@ -317,6 +326,14 @@ async function safeRender() {
     }, 'error');
     toast('⚠️ Lỗi hiển thị. Vui lòng thử lại.', 'err');
   }
+}
+
+function scheduleSafeRender() {
+  if (renderRafId) return;
+  renderRafId = requestAnimationFrame(() => {
+    renderRafId = 0;
+    void safeRender();
+  });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -571,7 +588,7 @@ function updateResultFaceOffsetByDelta(deltaX, deltaY) {
     -100,
     100,
   );
-  void safeRender();
+  scheduleSafeRender();
 }
 
 function clamp(value, min, max) {
@@ -640,7 +657,7 @@ function applyLightboxTransform() {
 /**
  * Xuất ảnh kết quả dưới dạng file download.
  *
- * @param {'jpeg600'|'jpeg300'|'png'} mode - Định dạng và DPI xuất
+ * @param {'jpeg600'|'jpeg300'|'png600'} mode - Định dạng và DPI xuất
  * @returns {Promise<void>}
  */
 export async function download(mode) {

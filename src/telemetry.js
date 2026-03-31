@@ -6,6 +6,12 @@ const LOG_LEVEL_RANK = {
   warn:   2,
   info:   3,
 };
+const SAFE_TELEMETRY_PROTOCOLS = new Set(['https:']);
+const SAFE_TELEMETRY_LOCAL_HOSTS = new Set([
+  'localhost',
+  '127.0.0.1',
+  '::1',
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -90,6 +96,7 @@ function buildFullContext() {
 function sendToEndpoint(event) {
   const endpoint = globalThis?.__IDPHOTO_CONFIG__?.telemetryEndpoint;
   if (!endpoint || typeof endpoint !== 'string') return;
+  if (!isAllowedTelemetryEndpoint(endpoint)) return;
 
   try {
     const body = JSON.stringify(event);
@@ -109,6 +116,17 @@ function sendToEndpoint(event) {
     }
   } catch {
     // Best-effort telemetry: không throw.
+  }
+}
+
+function isAllowedTelemetryEndpoint(endpoint) {
+  try {
+    const parsed = new URL(endpoint);
+    if (SAFE_TELEMETRY_PROTOCOLS.has(parsed.protocol)) return true;
+    if (parsed.protocol !== 'http:') return false;
+    return SAFE_TELEMETRY_LOCAL_HOSTS.has(parsed.hostname);
+  } catch {
+    return false;
   }
 }
 

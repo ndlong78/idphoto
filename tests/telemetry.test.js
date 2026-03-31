@@ -86,3 +86,47 @@ test('telemetry: serializeErrorForTelemetry xử lý non-error value', () => {
   assert.equal(serialized.type, 'object');
   assert.match(serialized.message, /\[object Object\]/);
 });
+
+test('telemetry: chặn endpoint http không an toàn', () => {
+  const prevFetch = globalThis.fetch;
+  const prevNavigator = globalThis.navigator;
+  let called = 0;
+
+  globalThis.fetch = () => {
+    called += 1;
+    return Promise.resolve({ ok: true });
+  };
+  globalThis.navigator = {};
+  globalThis.__IDPHOTO_CONFIG__ = { telemetryEndpoint: 'http://evil.example.com/events' };
+
+  try {
+    logEvent('test.endpoint_blocked', {}, 'info');
+    assert.equal(called, 0);
+  } finally {
+    globalThis.fetch = prevFetch;
+    globalThis.navigator = prevNavigator;
+    delete globalThis.__IDPHOTO_CONFIG__;
+  }
+});
+
+test('telemetry: cho phép endpoint localhost qua http', () => {
+  const prevFetch = globalThis.fetch;
+  const prevNavigator = globalThis.navigator;
+  let called = 0;
+
+  globalThis.fetch = () => {
+    called += 1;
+    return Promise.resolve({ ok: true });
+  };
+  globalThis.navigator = {};
+  globalThis.__IDPHOTO_CONFIG__ = { telemetryEndpoint: 'http://localhost:4318/events' };
+
+  try {
+    logEvent('test.endpoint_localhost', {}, 'info');
+    assert.equal(called, 1);
+  } finally {
+    globalThis.fetch = prevFetch;
+    globalThis.navigator = prevNavigator;
+    delete globalThis.__IDPHOTO_CONFIG__;
+  }
+});

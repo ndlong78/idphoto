@@ -20,6 +20,7 @@ import {
 
 let pipelineStep = STEPS.IDLE;
 let isProcessing = false;
+let activeRunId = 0;
 
 
 export function assertBrowserFileInput(file, context = 'main.handleFile') {
@@ -53,15 +54,16 @@ function assertReadyForReprocess() {
   }
 }
 
-async function withTimeoutFallback(promise, timeoutMs, fallbackValue) {
+async function withTimeoutFallback(promise, timeoutMs, fallbackValue, isCurrent = () => true) {
   let timerId = 0;
   try {
-    return await Promise.race([
+    const result = await Promise.race([
       promise,
       new Promise((resolve) => {
         timerId = window.setTimeout(() => resolve(fallbackValue), timeoutMs);
       }),
     ]);
+    return isCurrent() ? result : fallbackValue;
   } finally {
     if (timerId) window.clearTimeout(timerId);
   }
@@ -88,7 +90,8 @@ function loadImageFromFile(file) {
   });
 }
 
-async function processFile(file) {
+async function processFile(file, runId) {
+  const isCurrentRun = () => runId === activeRunId;
   const pipelineStartedAt = performance.now();
   setSection('loading');
   setProgress(5);
@@ -98,9 +101,10 @@ async function processFile(file) {
   pipelineStep = nextStep(pipelineStep);
 
   const [aiReadyRaw, faceReadyRaw] = await Promise.all([
-    withTimeoutFallback(warmupAi(), 25_000, false),
-    withTimeoutFallback(loadFaceModels(), 15_000, false),
+    withTimeoutFallback(warmupAi(), 25_000, false, isCurrentRun),
+    withTimeoutFallback(loadFaceModels(), 15_000, false, isCurrentRun),
   ]);
+  if (!isCurrentRun()) return;
   const aiReady   = Boolean(aiReadyRaw);
   const faceReady = Boolean(faceReadyRaw);
   setLoadStep(1, 'done');
@@ -126,6 +130,7 @@ async function processFile(file) {
       error: serializeErrorForTelemetry(err, { fallbackMessage: 'Face detect failed' }),
     }, 'warn');
   }
+  if (!isCurrentRun()) return;
   setLoadStep(2, 'done');
   setProgress(35);
 
@@ -145,6 +150,7 @@ async function processFile(file) {
       error: serializeErrorForTelemetry(err, { fallbackMessage: 'Background removal failed' }),
     }, 'warn');
   }
+  if (!isCurrentRun()) return;
   setLoadStep(3, 'done');
 
   setLoadStep(4, 'active');
@@ -197,11 +203,14 @@ async function reprocessAI() {
   }
 
   const startedAt = performance.now();
+  const runId = ++activeRunId;
+  const isCurrentRun = () => runId === activeRunId;
   isProcessing = true;
   try {
     if (!state.aiReady) {
       setLoad('Đang tải AI...', 'Đang thử lại mô-đun tách nền');
       const aiReady = await warmupAi();
+      if (!isCurrentRun()) return;
       if (!aiReady) {
         toast('⚠️ Chưa tải được AI. Vui lòng kiểm tra mạng và thử lại.', 'err');
         setAiInfoBar(false, state.aiError);
@@ -210,6 +219,7 @@ async function reprocessAI() {
     }
 
     state.aiMaskImg = await runBackgroundRemoval(state.origFile);
+    if (!isCurrentRun()) return;
     if (!state.aiMaskImg) {
       toast('⚠️ AI chưa xử lý được ảnh này. Đang giữ chế độ Flood Fill.', 'err');
     }
@@ -294,10 +304,12 @@ async function handleFile(file) {
 
   try {
     isProcessing   = true;
+    const runId    = ++activeRunId;
     pipelineStep   = STEPS.IDLE;
     state.origFile = safeFile;
     state.origImg  = await loadImageFromFile(safeFile);
-    await processFile(safeFile);
+    if (runId !== activeRunId) return;
+    await processFile(safeFile, runId);
   } catch (err) {
     toast('Upload thất bại. Vui lòng thử lại.', 'err');
     setSection('upload');
