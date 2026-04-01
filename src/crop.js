@@ -16,13 +16,19 @@ let lastPoint = { x: 0, y: 0 };
 let lastPinch = 0;
 let needDraw = false;
 let previewRafId = 0;
+let previewTimerId = 0;
+const PREVIEW_RENDER_DEBOUNCE_MS = 60;
 
 function schedulePreviewRender() {
-  if (previewRafId) return;
-  previewRafId = requestAnimationFrame(() => {
-    previewRafId = 0;
-    void renderToPreview();
-  });
+  if (previewTimerId) clearTimeout(previewTimerId);
+  previewTimerId = window.setTimeout(() => {
+    previewTimerId = 0;
+    if (previewRafId) return;
+    previewRafId = requestAnimationFrame(() => {
+      previewRafId = 0;
+      void renderToPreview();
+    });
+  }, PREVIEW_RENDER_DEBOUNCE_MS);
 }
 
 /**
@@ -144,6 +150,10 @@ export function cleanupCropEvents() {
   if (previewRafId) {
     cancelAnimationFrame(previewRafId);
     previewRafId = 0;
+  }
+  if (previewTimerId) {
+    clearTimeout(previewTimerId);
+    previewTimerId = 0;
   }
 }
 

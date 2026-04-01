@@ -118,6 +118,35 @@ function normalizeWarmupErrorMessage(rawMessage = '') {
   return String(rawMessage || 'Không tải được module AI từ CDN');
 }
 
+/**
+ * Khi trang chưa chạy ở crossOriginIsolated, onnxruntime-web không thể dùng
+ * multi-thread wasm. Hạ numThreads về 1 để tránh cảnh báo noisy trên console.
+ */
+function enforceSingleThreadWasmIfNeeded(mod) {
+  if (globalThis.crossOriginIsolated) return;
+  try {
+    // Pre-seed để onnxruntime-web (nếu đọc globalThis.ort lúc bootstrap)
+    // nhận numThreads=1 ngay từ đầu, trước khi tự init env mặc định.
+    if (!globalThis.ort) globalThis.ort = {};
+    if (!globalThis.ort.env) globalThis.ort.env = {};
+    if (!globalThis.ort.env.wasm) globalThis.ort.env.wasm = {};
+    globalThis.ort.env.wasm.numThreads = 1;
+
+    const envCandidates = [
+      mod?.env,
+      mod?.default?.env,
+      globalThis.ort?.env,
+    ];
+    for (const env of envCandidates) {
+      if (env?.wasm && Number.isFinite(env.wasm.numThreads) && env.wasm.numThreads > 1) {
+        env.wasm.numThreads = 1;
+      }
+    }
+  } catch {
+    // no-op: chỉ là tối ưu tránh warning, không làm fail luồng AI
+  }
+}
+
 function loadScriptSequentially(urls) {
   if (faceApiScriptPromise) return faceApiScriptPromise;
 
@@ -196,8 +225,10 @@ export async function warmupAi() {
   for (const url of BG_REMOVAL_MODULE_SOURCES) {
     try {
       assertAllowedRemoteUrl(url, 'bg_module');
+      enforceSingleThreadWasmIfNeeded(null);
       const startedAt = performance.now();
       const mod = await import(url);
+      enforceSingleThreadWasmIfNeeded(mod);
       removeBackgroundFn = mod.removeBackground || mod.default?.removeBackground || mod.default;
       if (typeof removeBackgroundFn === 'function') {
         state.aiReady = true;
