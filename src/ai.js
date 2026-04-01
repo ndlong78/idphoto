@@ -125,6 +125,13 @@ function normalizeWarmupErrorMessage(rawMessage = '') {
 function enforceSingleThreadWasmIfNeeded(mod) {
   if (globalThis.crossOriginIsolated) return;
   try {
+    // Pre-seed để onnxruntime-web (nếu đọc globalThis.ort lúc bootstrap)
+    // nhận numThreads=1 ngay từ đầu, trước khi tự init env mặc định.
+    if (!globalThis.ort) globalThis.ort = {};
+    if (!globalThis.ort.env) globalThis.ort.env = {};
+    if (!globalThis.ort.env.wasm) globalThis.ort.env.wasm = {};
+    globalThis.ort.env.wasm.numThreads = 1;
+
     const envCandidates = [
       mod?.env,
       mod?.default?.env,
@@ -218,6 +225,7 @@ export async function warmupAi() {
   for (const url of BG_REMOVAL_MODULE_SOURCES) {
     try {
       assertAllowedRemoteUrl(url, 'bg_module');
+      enforceSingleThreadWasmIfNeeded(null);
       const startedAt = performance.now();
       const mod = await import(url);
       enforceSingleThreadWasmIfNeeded(mod);
