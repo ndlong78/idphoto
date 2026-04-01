@@ -87,7 +87,7 @@ export async function renderResultParts(scale = 1) {
     maskCanvas.height = h;
   }
 
-  const ctx = outCanvas.getContext('2d');
+  const ctx = outCanvas.getContext('2d', { willReadFrequently: true });
   if (!ctx || !state.origImg) {
     return {
       composed: outCanvas,
@@ -104,7 +104,7 @@ export async function renderResultParts(scale = 1) {
   let faceCutoutData = null;
 
   if (state.aiMaskImg) {
-    const mctx = maskCanvas.getContext('2d');
+    const mctx = maskCanvas.getContext('2d', { willReadFrequently: true });
     if (mctx) {
       mctx.clearRect(0, 0, w, h);
       const maskCrop = mapCropRect(crop, state.origImg, state.aiMaskImg);
