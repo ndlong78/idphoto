@@ -130,3 +130,33 @@ test('telemetry: cho phép endpoint localhost qua http', () => {
     delete globalThis.__IDPHOTO_CONFIG__;
   }
 });
+
+test('telemetry: mặc định redact fileName/mimeType trong payload', () => {
+  delete globalThis.__IDPHOTO_CONFIG__;
+  const event = logEvent('test.redact_default', {
+    fileName: 'secret_passport_name.jpg',
+    mimeType: 'image/jpeg',
+    fileSize: 12345,
+  }, 'info');
+
+  assert.equal(event.payload.fileName, '[redacted]');
+  assert.equal(event.payload.mimeType, '[redacted]');
+  assert.equal(event.payload.fileSize, 12345);
+});
+
+test('telemetry: cho phép giữ fileName/mimeType khi bật allowSensitiveTelemetry', () => {
+  globalThis.__IDPHOTO_CONFIG__ = { allowSensitiveTelemetry: true };
+  try {
+    const event = logEvent('test.redact_optout', {
+      fileName: 'keep_me.jpg',
+      mimeType: 'image/jpeg',
+      fileSize: 6789,
+    }, 'info');
+
+    assert.equal(event.payload.fileName, 'keep_me.jpg');
+    assert.equal(event.payload.mimeType, 'image/jpeg');
+    assert.equal(event.payload.fileSize, 6789);
+  } finally {
+    delete globalThis.__IDPHOTO_CONFIG__;
+  }
+});
