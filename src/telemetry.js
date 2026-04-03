@@ -12,6 +12,10 @@ const SAFE_TELEMETRY_LOCAL_HOSTS = new Set([
   '127.0.0.1',
   '::1',
 ]);
+const SENSITIVE_PAYLOAD_KEYS = new Set([
+  'fileName',
+  'mimeType',
+]);
 
 function nowIso() {
   return new Date().toISOString();
@@ -150,6 +154,23 @@ function truncateText(value, max = 500) {
   return `${text.slice(0, max)}…`;
 }
 
+function shouldAllowSensitiveTelemetry() {
+  return globalThis?.__IDPHOTO_CONFIG__?.allowSensitiveTelemetry === true;
+}
+
+function sanitizeTelemetryPayload(payload) {
+  if (shouldAllowSensitiveTelemetry()) return payload;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+
+  const sanitized = { ...payload };
+  for (const key of SENSITIVE_PAYLOAD_KEYS) {
+    if (Object.hasOwn(sanitized, key)) {
+      sanitized[key] = '[redacted]';
+    }
+  }
+  return sanitized;
+}
+
 /**
  * Serialize error an toàn để đưa vào telemetry, tránh log raw object nhạy cảm.
  * Chỉ lấy một số trường chuẩn (name/message/stack/code/status/cause).
@@ -212,6 +233,8 @@ export function logEvent(type, payload = {}, level = 'info') {
   const id = globalThis.crypto?.randomUUID?.()
     ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+  const sanitizedPayload = sanitizeTelemetryPayload(payload);
+
   // Event lưu localStorage: dùng localContext (không fingerprint)
   const localEvent = {
     id,
@@ -219,7 +242,7 @@ export function logEvent(type, payload = {}, level = 'info') {
     level,
     ts:      nowIso(),
     context: buildLocalContext(),
-    payload,
+    payload: sanitizedPayload,
   };
 
   const events = loadBuffer();
