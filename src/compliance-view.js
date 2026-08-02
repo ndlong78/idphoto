@@ -180,7 +180,6 @@ export function ensureCompliancePanel(doc = globalThis.document) {
   const panel = doc.createElement('section');
   panel.id = 'compliance-panel';
   panel.className = 'compliance-card';
-  panel.setAttribute('aria-live', 'polite');
   panel.setAttribute('aria-labelledby', 'compliance-title');
 
   const header = doc.createElement('div');
@@ -196,6 +195,9 @@ export function ensureCompliancePanel(doc = globalThis.document) {
 
   const status = appendTextElement(doc, header, 'span', 'compliance-status is-neutral', 'Đang chờ dữ liệu');
   status.id = 'compliance-summary-status';
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
+  status.setAttribute('aria-atomic', 'true');
   header.insertBefore(headingWrap, status);
   panel.appendChild(header);
 
@@ -246,6 +248,10 @@ export function ensureCompliancePanel(doc = globalThis.document) {
 
   controlsRow.parentNode.insertBefore(panel, controlsRow);
   return panel;
+}
+
+function setTextIfChanged(el, value) {
+  if (el && el.textContent !== value) el.textContent = value;
 }
 
 function renderCounters(doc, container, counts) {
@@ -317,15 +323,15 @@ export function renderCompliancePanel(result, doc = globalThis.document) {
 
   if (status) {
     status.className = `compliance-status is-${model.tone}`;
-    status.textContent = model.statusLabel;
+    setTextIfChanged(status, model.statusLabel);
   }
-  if (title) title.textContent = model.title;
-  if (summary) summary.textContent = model.summary;
+  setTextIfChanged(title, model.title);
+  setTextIfChanged(summary, model.summary);
   if (counters) renderCounters(doc, counters, model.counts);
 
   if (details && detailsSummary && checkList) {
     const userHadOpened = details.open;
-    detailsSummary.textContent = `Xem chi tiết ${model.checks.length} tiêu chí`;
+    setTextIfChanged(detailsSummary, `Xem chi tiết ${model.checks.length} tiêu chí`);
     renderChecks(doc, checkList, model.checks);
     details.open = model.openDetails || userHadOpened;
   }
@@ -335,7 +341,7 @@ export function renderCompliancePanel(result, doc = globalThis.document) {
     if (model.sourceUrl) source.href = model.sourceUrl;
     else source.removeAttribute('href');
   }
-  if (disclaimer) disclaimer.textContent = model.disclaimer;
+  setTextIfChanged(disclaimer, model.disclaimer);
 
   return panel;
 }
