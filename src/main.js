@@ -1,5 +1,7 @@
-import { detectFace, loadFaceModels, runBackgroundRemoval, warmupAi } from './ai.js';
+import { loadFaceModels, runBackgroundRemoval, warmupAi } from './ai.js';
+import { refreshComplianceResult } from './compliance-pipeline.js';
 import { downloadWithDpi } from './export.js';
+import { detectFacesWithLandmarks } from './face-detection.js';
 import { nextStep, STEPS } from './pipeline.js';
 import { renderToPreview } from './render.js';
 import { state, validateImageFile } from './state.js';
@@ -122,7 +124,7 @@ async function processFile(file, runId) {
   setLoad('Nhận dạng khuôn mặt...', '');
   pipelineStep = nextStep(pipelineStep);
   try {
-    state.faceData = faceReady ? await detectFace(oc) : null;
+    state.faceData = faceReady ? await detectFacesWithLandmarks(oc) : null;
   } catch (err) {
     state.faceData = null;
     logEvent('pipeline.face_detect_failed', {
@@ -158,6 +160,7 @@ async function processFile(file, runId) {
   pipelineStep = nextStep(pipelineStep);
   mountEditor();
   await renderToPreview();
+  const complianceResult = refreshComplianceResult();
   setLoadStep(4, 'done');
   setProgress(100);
   setSteps(3);
@@ -172,8 +175,12 @@ async function processFile(file, runId) {
     aiReady,
     faceReady,
     hasFace:   Boolean(state.faceData),
+    faceCount: state.faceData?.faceCount ?? 0,
+    hasEyeLandmarks: Number.isFinite(state.faceData?.eyeLineY),
     hasAiMask: Boolean(state.aiMaskImg),
     aiError:   state.aiError || null,
+    complianceStatus: complianceResult?.automatedStatus ?? null,
+    complianceWarningCount: complianceResult?.checks?.filter((check) => check.status === 'warning').length ?? 0,
     durationMs: Math.round(performance.now() - pipelineStartedAt),
   });
 
@@ -308,6 +315,8 @@ async function handleFile(file) {
     pipelineStep   = STEPS.IDLE;
     state.origFile = safeFile;
     state.origImg  = await loadImageFromFile(safeFile);
+    state.faceData = null;
+    state.complianceResult = null;
     if (runId !== activeRunId) return;
     await processFile(safeFile, runId);
   } catch (err) {
