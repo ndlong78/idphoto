@@ -4,6 +4,15 @@ import {
   projectHorizontalLineToOutput,
 } from './compliance.js';
 import { FMTS, state } from './state.js';
+import {
+  ensureCompliancePanel,
+  getComplianceGeometrySignature,
+  renderCompliancePanel,
+} from './compliance-view.js';
+
+let complianceLiveTimerId = 0;
+let complianceLiveWindow = null;
+let lastComplianceGeometrySignature = '';
 
 function finiteOrNull(value) {
   return Number.isFinite(value) ? value : null;
@@ -112,7 +121,6 @@ export function evaluateDetectedPhotoCompliance({
 
 /**
  * Cập nhật state.complianceResult sau khi pipeline đã có ảnh, crop và face data.
- * Chưa hiển thị lên UI trong PR #33.
  *
  * @returns {ReturnType<typeof evaluatePhotoCompliance>|null}
  */
@@ -135,3 +143,88 @@ export function refreshComplianceResult() {
   state.complianceResult = result;
   return result;
 }
+
+/**
+ * Tính lại compliance và render panel hiện tại.
+ *
+ * @param {Document} documentRef
+ * @returns {ReturnType<typeof evaluatePhotoCompliance>|null}
+ */
+export function refreshComplianceView(documentRef = globalThis.document) {
+  const result = refreshComplianceResult();
+  if (documentRef) renderCompliancePanel(result, documentRef);
+  return result;
+}
+
+/**
+ * Dừng vòng theo dõi geometry của editor.
+ */
+export function stopComplianceLiveUpdates() {
+  if (complianceLiveTimerId && complianceLiveWindow) {
+    complianceLiveWindow.clearInterval(complianceLiveTimerId);
+  }
+  complianceLiveTimerId = 0;
+  complianceLiveWindow = null;
+  lastComplianceGeometrySignature = '';
+}
+
+/**
+ * Theo dõi thay đổi hình học của editor và chỉ tính lại checker khi signature đổi.
+ * Không chạy lại face detection hoặc background removal.
+ *
+ * @param {object} options
+ * @param {number} [options.intervalMs=120]
+ * @param {Window} [options.windowRef]
+ * @param {Document} [options.documentRef]
+ * @returns {function(): void}
+ */
+export function startComplianceLiveUpdates({
+  intervalMs = 120,
+  windowRef = globalThis.window,
+  documentRef = globalThis.document,
+} = {}) {
+  if (!windowRef || !documentRef) return () => {};
+  if (!Number.isFinite(intervalMs) || intervalMs < 50) {
+    throw new RangeError('intervalMs phải là số hữu hạn và không nhỏ hơn 50ms.');
+  }
+
+  ensureCompliancePanel(documentRef);
+  if (complianceLiveTimerId) return stopComplianceLiveUpdates;
+
+  const tick = () => {
+    if (state.section !== 'editor') {
+      lastComplianceGeometrySignature = '';
+      return;
+    }
+
+    const signature = getComplianceGeometrySignature(state);
+    if (signature === lastComplianceGeometrySignature) return;
+
+    try {
+      refreshComplianceView(documentRef);
+      lastComplianceGeometrySignature = signature;
+    } catch {
+      lastComplianceGeometrySignature = '';
+      state.complianceResult = null;
+      renderCompliancePanel(null, documentRef);
+    }
+  };
+
+  complianceLiveWindow = windowRef;
+  tick();
+  complianceLiveTimerId = windowRef.setInterval(tick, intervalMs);
+  return stopComplianceLiveUpdates;
+}
+
+function autoStartComplianceLiveUpdates() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  const start = () => startComplianceLiveUpdates({ windowRef: window, documentRef: document });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
+}
+
+autoStartComplianceLiveUpdates();
