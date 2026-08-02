@@ -18,17 +18,30 @@ function normalizeBox(box, outputSize) {
   if (!box || !outputSize) return null;
   const width = finite(outputSize.width);
   const height = finite(outputSize.height);
+  const boxX = finite(box.x);
+  const boxY = finite(box.y);
   const boxWidth = finite(box.width ?? box.w);
   const boxHeight = finite(box.height ?? box.h);
-  if (!width || !height || width <= 0 || height <= 0 || !boxWidth || !boxHeight) return null;
+  if (
+    width === null
+    || height === null
+    || boxX === null
+    || boxY === null
+    || boxWidth === null
+    || boxHeight === null
+    || width <= 0
+    || height <= 0
+    || boxWidth <= 0
+    || boxHeight <= 0
+  ) return null;
 
   return {
-    left: box.x / width,
-    top: box.y / height,
+    left: boxX / width,
+    top: boxY / height,
     width: boxWidth / width,
     height: boxHeight / height,
-    centerX: (box.x + boxWidth / 2) / width,
-    centerY: (box.y + boxHeight / 2) / height,
+    centerX: (boxX + boxWidth / 2) / width,
+    centerY: (boxY + boxHeight / 2) / height,
   };
 }
 
