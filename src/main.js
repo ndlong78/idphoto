@@ -1,11 +1,11 @@
 import { detectFace, loadFaceModels, runBackgroundRemoval, warmupAi } from './ai.js';
+import { downloadWithDpi } from './export.js';
 import { nextStep, STEPS } from './pipeline.js';
 import { renderToPreview } from './render.js';
 import { state, validateImageFile } from './state.js';
 import { logEvent, serializeErrorForTelemetry, setTelemetryContext } from './telemetry.js';
 import {
   copyToClipboard,
-  download,
   initUI,
   mountEditor,
   setAiInfoBar,
@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
     onPickFile:    openFilePicker,
     onReprocessAI: reprocessAI,
     onDownload: async (mode) => {
-      await download(mode);
+      await downloadWithDpi(mode);
       setSteps(4);
       toast('✅ Đã tải ảnh thành công', 'ok');
       logEvent('asset.download', { mode, format: state.curFmt });
