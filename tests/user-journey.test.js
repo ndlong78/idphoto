@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { state, validateImageFile } from '../src/state.js';
+import { FMTS, state, validateImageFile } from '../src/state.js';
 import { renderResult } from '../src/render.js';
 import { download } from '../src/ui.js';
 
@@ -85,21 +85,22 @@ test('journey: upload hợp lệ -> AI fallback render -> export', async () => {
     const validation = validateImageFile(file);
     assert.equal(validation.ok, true, 'Upload JPG hợp lệ phải pass validateImageFile');
 
+    const format = FMTS['passport-vn'];
     state.origImg = { width: 400, height: 500 };
     state.origFile = file;
     state.aiMaskImg = null; // AI fallback branch
     state.curFmt = 'passport-vn';
     state.bgColor = { r: 255, g: 255, b: 255 };
-    state.frame = { x: 0, y: 0, w: 413, h: 531 };
+    state.frame = { x: 0, y: 0, w: format.w, h: format.h };
     state.crop = { x: 0, y: 0, scale: 1 };
 
     const preview = await renderResult(1);
-    assert.equal(preview.width, 413);
-    assert.equal(preview.height, 531);
+    assert.equal(preview.width, format.w);
+    assert.equal(preview.height, format.h);
 
     await download('jpeg300');
     assert.ok(capturedAnchor?.clickCalled, 'download() phải trigger click link');
-    assert.match(capturedAnchor.download, /photovisa_passport-vn_413x531_300dpi\.jpeg$/);
+    assert.match(capturedAnchor.download, /photovisa_passport-vn_472x709_300dpi\.jpeg$/);
     assert.match(capturedAnchor.href, /^data:image\/jpeg/);
   } finally {
     globalThis.document = previousDocument;

@@ -1,6 +1,8 @@
 # PhotoVisa — ID Photo Generator
 
-Ứng dụng web tạo ảnh hộ chiếu / visa / CCCD chuẩn kích thước ngay trên trình duyệt. **Không upload ảnh lên server** — toàn bộ xử lý diễn ra 100% client-side.
+Ứng dụng web tạo ảnh hộ chiếu / visa / CCCD theo kích thước hồ sơ ngay trên trình duyệt. **Không upload ảnh lên server** — toàn bộ xử lý diễn ra 100% client-side.
+
+> PhotoVisa hỗ trợ căn chỉnh và xuất file theo kích thước đã chọn. Kết quả vẫn cần được người dùng đối chiếu với yêu cầu mới nhất của cơ quan tiếp nhận; ứng dụng không bảo đảm hồ sơ sẽ được chấp nhận.
 
 ## Tính năng
 
@@ -8,7 +10,7 @@
 - 👤 **Nhận diện khuôn mặt** tự động (TinyFaceDetector via face-api.js)
 - ✂️ **Crop / zoom / kéo** tương tác với chuột và cảm ứng
 - 🎨 **Điều chỉnh ảnh**: độ sáng, tương phản, độ sắc nét, làm mịn da
-- 📐 **Nhiều định dạng**: Hộ chiếu VN (35×45mm), CCCD (30×40mm), US Visa (51×51mm), Schengen, UK, Nhật Bản
+- 📐 **Nhiều định dạng**: Hộ chiếu VN (40×60mm), CCCD (30×40mm), US Visa (51×51mm), Schengen, UK, Nhật Bản
 - 💾 **Xuất ảnh**: JPG 600 DPI (in), JPG 300 DPI (email), PNG, sao chép clipboard
 - 🔒 **Bảo mật**: CSP nghiêm ngặt, allowlist CDN, không lưu ảnh
 
@@ -24,7 +26,7 @@ python3 -m http.server 8080
 ```
 
 > **Lưu ý:** `unsafe-eval` trong CSP là bắt buộc do `onnxruntime-web` (dependency của @imgly)
-> cần `eval` để chạy WASM. App không nhận HTML/script từ nguồn bên ngoài nên rủi ro thực tế thấp.
+> cần `eval` để chạy WASM. App không nhận HTML/script từ API hoặc input người dùng nên rủi ro thực tế thấp.
 
 ## Cấu hình (tùy chọn)
 
@@ -48,22 +50,18 @@ Tham khảo `.env.example` để biết thêm chi tiết.
 
 ```
 src/
-├── main.js        # Entry point, pipeline xử lý ảnh
-├── ai.js          # Load & chạy model AI (background removal, face detection)
-├── render.js      # Canvas rendering, mask blending, image adjustments
-├── crop.js        # Canvas crop tương tác (drag, zoom, pinch)
-├── ui.js          # UI bindings, export ảnh, toast notifications
-├── state.js       # Global state, FMTS, validateImageFile
-├── telemetry.js   # Logging event (privacy-safe: không fingerprint trong localStorage)
-├── security.js    # URL allowlist, CSP enforcement
-├── constants.js   # Hằng số dùng chung
-└── pipeline.js    # Enum bước xử lý
-tests/
-├── pipeline.test.js
-├── render.test.js
-├── security.test.js
-├── telemetry.test.js
-└── validation.test.js
+├── main.js           # Entry point, pipeline xử lý ảnh
+├── ai.js             # Load & chạy model AI (background removal, face detection)
+├── render.js         # Canvas rendering, mask blending, image adjustments
+├── crop.js           # Canvas crop tương tác (drag, zoom, pinch)
+├── ui.js             # UI bindings, toast notifications
+├── export.js         # Render và download ảnh 300/600 DPI
+├── image-metadata.js # Ghi metadata DPI cho JPEG/PNG
+├── state.js          # Global state, FMTS, validateImageFile
+├── telemetry.js      # Logging event (privacy-safe: không fingerprint trong localStorage)
+├── security.js       # URL allowlist, CSP enforcement
+├── constants.js      # Hằng số dùng chung
+└── pipeline.js       # Enum bước xử lý
 ```
 
 ## Phát triển
