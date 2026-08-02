@@ -1,31 +1,55 @@
-export const FMTS = {
-  // FIX: US Visa 51×51mm tại 300DPI = 51/25.4×300 = 602.36 → 602px
-  // Phiên bản cũ hardcode 600×600 (sai 2px), có thể bị từ chối ở một số
-  // cổng kiểm tra kích thước ảnh tự động.
-  'passport-vn': { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
-  cccd:          { w: 354, h: 472, lbl: '30 × 40 mm', dpi: 300 },
-  'us-visa':     { w: 602, h: 602, lbl: '51 × 51 mm', dpi: 300 },
-  schengen:      { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
-  'uk-visa':     { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
-  japan:         { w: 413, h: 531, lbl: '35 × 45 mm', dpi: 300 },
-};
+const MILLIMETERS_PER_INCH = 25.4;
 
-// FIX [IMPORTANT]: Kiểm tra contract FMTS tại load time.
-//
-// download() trong ui.js tính scale = targetDpi / fmt.dpi, với
-// targetDpi ∈ {300, 600}. Logic này giả định fmt.dpi = 300:
-//   - jpeg300 → scale = 300/300 = 1× (output = w×h px)
-//   - jpeg600 → scale = 600/300 = 2× (output = 2w×2h px)
-//
-// Nếu thêm format mới với dpi ≠ 300, scale sẽ tính sai kích thước file
-// và ảnh in ra sẽ không đúng mm. Throw ngay khi module load để fail fast
-// thay vì xuất ảnh sai kích thước một cách âm thầm.
+/**
+ * Chuyển kích thước vật lý (mm) sang pixel theo DPI, làm tròn tới pixel gần nhất.
+ *
+ * @param {number} millimeters
+ * @param {number} [dpi=300]
+ * @returns {number}
+ */
+export function mmToPixels(millimeters, dpi = 300) {
+  if (!Number.isFinite(millimeters) || millimeters <= 0) {
+    throw new RangeError('Kích thước millimeter phải là số dương hữu hạn.');
+  }
+  if (!Number.isFinite(dpi) || dpi <= 0) {
+    throw new RangeError('DPI phải là số dương hữu hạn.');
+  }
+  return Math.round((millimeters / MILLIMETERS_PER_INCH) * dpi);
+}
+
+function createFormat(mmW, mmH, lbl, dpi = 300) {
+  return Object.freeze({
+    w: mmToPixels(mmW, dpi),
+    h: mmToPixels(mmH, dpi),
+    mmW,
+    mmH,
+    lbl,
+    dpi,
+  });
+}
+
+export const FMTS = Object.freeze({
+  // Cổng Dịch vụ công Bộ Công an yêu cầu ảnh chân dung hộ chiếu Việt Nam 4×6 cm.
+  'passport-vn': createFormat(40, 60, '40 × 60 mm'),
+  cccd:          createFormat(30, 40, '30 × 40 mm'),
+  'us-visa':     createFormat(51, 51, '51 × 51 mm'),
+  schengen:      createFormat(35, 45, '35 × 45 mm'),
+  'uk-visa':     createFormat(35, 45, '35 × 45 mm'),
+  japan:         createFormat(35, 45, '35 × 45 mm'),
+});
+
+// Contract xuất ảnh hiện giả định mọi preset dùng mốc 300 DPI.
+// src/export.js tính scale = targetDpi / fmt.dpi để tạo file 300/600 DPI.
+// Đồng thời kiểm tra kích thước pixel luôn khớp với kích thước vật lý đã khai báo.
 for (const [key, fmt] of Object.entries(FMTS)) {
   if (fmt.dpi !== 300) {
     throw new Error(
       `FMTS['${key}'].dpi phải là 300 (nhận được ${fmt.dpi}). ` +
-      'Xem logic download() trong ui.js trước khi thêm format mới.',
+      'Xem logic trong src/export.js trước khi thêm format mới.',
     );
+  }
+  if (fmt.w !== mmToPixels(fmt.mmW, fmt.dpi) || fmt.h !== mmToPixels(fmt.mmH, fmt.dpi)) {
+    throw new Error(`FMTS['${key}'] có kích thước pixel không khớp kích thước vật lý.`);
   }
 }
 
@@ -96,7 +120,6 @@ export function validateImageFile(file) {
   const mime = String(file.type || '').toLowerCase();
   const hasImageMime = /^(image\/jpeg|image\/png|image\/webp|image\/heic|image\/heif)$/.test(mime);
   const hasImageExt  = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
-  // FIX: thêm HEIF vào error message (regex đã hỗ trợ nhưng message thiếu)
   if (!hasImageMime && !hasImageExt)
     return { ok: false, error: 'Vui lòng chọn file ảnh (JPG/PNG/WEBP/HEIC/HEIF)!' };
   if (file.size > 15 * 1024 * 1024)
