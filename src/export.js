@@ -1,6 +1,6 @@
 import { canvasToDpiBlob } from './image-metadata.js';
 import { renderResult } from './render.js';
-import { FMTS, state } from './state.js';
+import { FMTS, mmToPixels, state } from './state.js';
 
 const EXPORT_MODES = Object.freeze({
   jpeg300: { mimeType: 'image/jpeg', extension: 'jpeg', dpiMultiplier: 1 },
@@ -17,19 +17,45 @@ export function resolveExportConfig(mode, format = FMTS[state.curFmt]) {
 
   const targetDpi = Math.round(format.dpi * preset.dpiMultiplier);
   const scale = targetDpi / format.dpi;
+  const hasPhysicalSize = Number.isFinite(format.mmW) && Number.isFinite(format.mmH);
   return {
     ...preset,
     targetDpi,
     scale,
-    width:  Math.round(format.w * scale),
-    height: Math.round(format.h * scale),
+    // Tính trực tiếp từ mm ở DPI đích để không nhân đôi sai số làm tròn 300 DPI.
+    width:  hasPhysicalSize ? mmToPixels(format.mmW, targetDpi) : Math.round(format.w * scale),
+    height: hasPhysicalSize ? mmToPixels(format.mmH, targetDpi) : Math.round(format.h * scale),
   };
+}
+
+/**
+ * Chuẩn hóa canvas về đúng kích thước pixel cuối cùng.
+ * renderResult() dùng scale đồng nhất; do làm tròn độc lập theo mm, mỗi chiều có
+ * thể lệch 1 pixel ở 600 DPI. Chỉ resample khi thật sự cần thiết.
+ */
+export function ensureCanvasDimensions(sourceCanvas, width, height) {
+  if (!sourceCanvas || !Number.isFinite(sourceCanvas.width) || !Number.isFinite(sourceCanvas.height)) {
+    throw new TypeError('A valid source canvas is required.');
+  }
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+    throw new RangeError('Export dimensions must be positive integers.');
+  }
+  if (sourceCanvas.width === width && sourceCanvas.height === height) return sourceCanvas;
+
+  const exactCanvas = document.createElement('canvas');
+  exactCanvas.width = width;
+  exactCanvas.height = height;
+  const ctx = exactCanvas.getContext('2d');
+  if (!ctx) throw new Error('Unable to create an export canvas context.');
+  ctx.drawImage(sourceCanvas, 0, 0, width, height);
+  return exactCanvas;
 }
 
 export async function createExportBlob(mode) {
   const format = FMTS[state.curFmt];
   const config = resolveExportConfig(mode, format);
-  const canvas = await renderResult(config.scale);
+  const renderedCanvas = await renderResult(config.scale);
+  const canvas = ensureCanvasDimensions(renderedCanvas, config.width, config.height);
   const blob = await canvasToDpiBlob(canvas, config.mimeType, config.targetDpi, 1);
   const filename = [
     'photovisa',
