@@ -1,0 +1,23 @@
+# Dependencies and tool caches
+node_modules/
+.wrangler/
+
+# Repository and CI metadata
+.git/
+.github/
+.gitignore
+.assetsignore
+
+# Development-only files
+tests/
+scripts/
+*.md
+package.json
+package-lock.json
+eslint.config.js
+wrangler.jsonc
+.env
+.env.*
+
+# Platform metadata that should not be public assets
+.vercel/
