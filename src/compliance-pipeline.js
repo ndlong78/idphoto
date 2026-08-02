@@ -199,11 +199,12 @@ export function startComplianceLiveUpdates({
 
     const signature = getComplianceGeometrySignature(state);
     if (signature === lastComplianceGeometrySignature) return;
-    lastComplianceGeometrySignature = signature;
 
     try {
       refreshComplianceView(documentRef);
+      lastComplianceGeometrySignature = signature;
     } catch {
+      lastComplianceGeometrySignature = '';
       state.complianceResult = null;
       renderCompliancePanel(null, documentRef);
     }
