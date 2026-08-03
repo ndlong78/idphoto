@@ -1,3 +1,13 @@
+import { getComplianceProfile } from './compliance.js';
+import {
+  applyAutoCompositionPlan,
+  buildAutoCompositionPlan,
+  captureCompositionState,
+  compositionStateMatches,
+  restoreCompositionState,
+} from './composition-fix.js';
+import { state } from './state.js';
+
 const GUIDE_TONE = Object.freeze({
   OK: 'ok',
   WARNING: 'warning',
@@ -5,6 +15,10 @@ const GUIDE_TONE = Object.freeze({
 });
 
 let guidesVisible = true;
+let autoCompositionUndo = null;
+let compositionFixBusy = false;
+let feedbackTimerId = 0;
+let lastGuideContext = { geometry: null, result: null, profile: null };
 
 function finite(value) {
   return Number.isFinite(value) ? value : null;
@@ -176,12 +190,20 @@ export function buildCompositionGuideModel({ geometry = null, result = null, pro
 }
 
 function ensureStylesheet(doc) {
-  if (doc.getElementById('composition-guides-stylesheet')) return;
-  const link = doc.createElement('link');
-  link.id = 'composition-guides-stylesheet';
-  link.rel = 'stylesheet';
-  link.href = './composition-guides.css';
-  doc.head?.appendChild(link);
+  if (!doc.getElementById('composition-guides-stylesheet')) {
+    const link = doc.createElement('link');
+    link.id = 'composition-guides-stylesheet';
+    link.rel = 'stylesheet';
+    link.href = './composition-guides.css';
+    doc.head?.appendChild(link);
+  }
+  if (!doc.getElementById('composition-fix-stylesheet')) {
+    const link = doc.createElement('link');
+    link.id = 'composition-fix-stylesheet';
+    link.rel = 'stylesheet';
+    link.href = './composition-fix.css';
+    doc.head?.appendChild(link);
+  }
 }
 
 function setPosition(el, values) {
@@ -201,8 +223,212 @@ function setHidden(el, hidden) {
   if (el) el.hidden = Boolean(hidden);
 }
 
+function createToolButton(doc, { id, text, title, className = '' }) {
+  const button = doc.createElement('button');
+  button.id = id;
+  button.type = 'button';
+  button.className = `composition-tool-btn ${className}`.trim();
+  button.textContent = text;
+  button.title = title;
+  return button;
+}
+
+function syncCompositionControls(doc) {
+  const faceOffset = doc.getElementById('face-y-offset');
+  const faceOffsetLabel = doc.getElementById('face-yv');
+  const value = Number(state.faceAdjust?.yOffsetPct) || 0;
+  if (faceOffset) faceOffset.value = String(value);
+  if (faceOffsetLabel) faceOffsetLabel.textContent = `${value > 0 ? '+' : ''}${value}%`;
+}
+
+function setFixFeedback(doc, text, tone = GUIDE_TONE.NEUTRAL) {
+  const feedback = doc.getElementById('composition-fix-feedback');
+  if (!feedback) return;
+  const view = doc.defaultView ?? globalThis.window;
+  if (feedbackTimerId && view) view.clearTimeout(feedbackTimerId);
+  feedback.textContent = text;
+  feedback.hidden = false;
+  setTone(feedback, tone);
+  if (view) {
+    feedbackTimerId = view.setTimeout(() => {
+      feedback.hidden = true;
+      feedbackTimerId = 0;
+    }, 5200);
+  }
+}
+
+async function rerenderAfterCompositionChange(doc) {
+  syncCompositionControls(doc);
+  const [{ syncZoomUI }, { renderToPreview }] = await Promise.all([
+    import('./dom.js'),
+    import('./render.js'),
+  ]);
+  syncZoomUI();
+  await renderToPreview();
+}
+
+function resolveCurrentProfile() {
+  return lastGuideContext.profile ?? getComplianceProfile(state.curFmt);
+}
+
+function updateCompositionToolState(doc) {
+  const autoButton = doc.getElementById('btn-auto-compose');
+  const undoButton = doc.getElementById('btn-undo-compose');
+  if (!autoButton || !undoButton) return;
+
+  if (autoCompositionUndo && !compositionStateMatches(state, autoCompositionUndo.after)) {
+    autoCompositionUndo = null;
+  }
+
+  const plan = buildAutoCompositionPlan({ snapshot: state, profile: resolveCurrentProfile() });
+  autoButton.disabled = compositionFixBusy || !plan.ok;
+  autoButton.title = plan.ok
+    ? 'Căn giữa và điều chỉnh các tiêu chí có đủ dữ liệu'
+    : plan.message;
+  undoButton.disabled = compositionFixBusy || !autoCompositionUndo;
+}
+
+async function runAutoComposition(doc) {
+  if (compositionFixBusy) return;
+  const plan = buildAutoCompositionPlan({ snapshot: state, profile: resolveCurrentProfile() });
+  if (!plan.ok) {
+    setFixFeedback(doc, plan.message, GUIDE_TONE.WARNING);
+    updateCompositionToolState(doc);
+    return;
+  }
+
+  compositionFixBusy = true;
+  updateCompositionToolState(doc);
+  try {
+    const before = captureCompositionState(state);
+    applyAutoCompositionPlan(state, plan);
+    const after = captureCompositionState(state);
+    if (plan.changed) autoCompositionUndo = { before, after };
+    await rerenderAfterCompositionChange(doc);
+    const limitation = plan.limitations?.[0] ? ` ${plan.limitations[0]}` : '';
+    setFixFeedback(
+      doc,
+      `${plan.message}${limitation}`,
+      plan.changed ? GUIDE_TONE.OK : GUIDE_TONE.NEUTRAL,
+    );
+  } catch {
+    setFixFeedback(doc, 'Không thể căn tự động lúc này. Hãy thử lại.', GUIDE_TONE.WARNING);
+  } finally {
+    compositionFixBusy = false;
+    updateCompositionToolState(doc);
+  }
+}
+
+async function runUndoComposition(doc) {
+  if (compositionFixBusy || !autoCompositionUndo) return;
+  if (!compositionStateMatches(state, autoCompositionUndo.after)) {
+    autoCompositionUndo = null;
+    setFixFeedback(
+      doc,
+      'Không thể hoàn tác vì bố cục đã được chỉnh thêm sau lần căn tự động.',
+      GUIDE_TONE.WARNING,
+    );
+    updateCompositionToolState(doc);
+    return;
+  }
+
+  compositionFixBusy = true;
+  updateCompositionToolState(doc);
+  try {
+    const restored = restoreCompositionState(state, autoCompositionUndo.before);
+    autoCompositionUndo = null;
+    if (!restored) {
+      setFixFeedback(doc, 'Không thể hoàn tác trên ảnh hoặc preset hiện tại.', GUIDE_TONE.WARNING);
+      return;
+    }
+    await rerenderAfterCompositionChange(doc);
+    setFixFeedback(doc, 'Đã hoàn tác lần căn tự động gần nhất.', GUIDE_TONE.OK);
+  } catch {
+    setFixFeedback(doc, 'Hoàn tác thất bại. Hãy chỉnh lại bố cục thủ công.', GUIDE_TONE.WARNING);
+  } finally {
+    compositionFixBusy = false;
+    updateCompositionToolState(doc);
+  }
+}
+
+function ensureCompositionTools(doc, overlay) {
+  const controls = doc.querySelector('.panel-right .panel-header-right');
+  if (!controls) return;
+
+  let tools = doc.getElementById('composition-tools');
+  if (!tools) {
+    tools = doc.createElement('div');
+    tools.id = 'composition-tools';
+    tools.className = 'composition-tools';
+
+    const autoButton = createToolButton(doc, {
+      id: 'btn-auto-compose',
+      text: '✨ Căn tự động',
+      title: 'Căn giữa và điều chỉnh các tiêu chí có đủ dữ liệu',
+      className: 'is-primary',
+    });
+    autoButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void runAutoComposition(doc);
+    });
+
+    const undoButton = createToolButton(doc, {
+      id: 'btn-undo-compose',
+      text: '↶ Hoàn tác',
+      title: 'Hoàn tác lần căn tự động gần nhất',
+    });
+    undoButton.disabled = true;
+    undoButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void runUndoComposition(doc);
+    });
+
+    const toggle = createToolButton(doc, {
+      id: 'btn-toggle-guides',
+      text: '◎ Hướng dẫn',
+      title: 'Bật hoặc tắt đường hướng dẫn bố cục',
+    });
+    toggle.setAttribute('aria-controls', 'composition-guides');
+    toggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      guidesVisible = !guidesVisible;
+      overlay.hidden = !guidesVisible;
+      toggle.setAttribute('aria-pressed', String(guidesVisible));
+      toggle.classList.toggle('is-active', guidesVisible);
+    });
+
+    tools.append(autoButton, undoButton, toggle);
+    controls.prepend(tools);
+  }
+
+  const toggle = doc.getElementById('btn-toggle-guides');
+  if (toggle) {
+    toggle.setAttribute('aria-pressed', String(guidesVisible));
+    toggle.classList.toggle('is-active', guidesVisible);
+  }
+
+  let feedback = doc.getElementById('composition-fix-feedback');
+  if (!feedback) {
+    const statusBar = doc.querySelector('.panel-right .result-status-bar');
+    if (statusBar) {
+      feedback = doc.createElement('div');
+      feedback.id = 'composition-fix-feedback';
+      feedback.className = 'composition-fix-feedback is-neutral';
+      feedback.setAttribute('role', 'status');
+      feedback.setAttribute('aria-live', 'polite');
+      feedback.hidden = true;
+      statusBar.appendChild(feedback);
+    }
+  }
+
+  updateCompositionToolState(doc);
+}
+
 /**
- * Tạo overlay và nút bật/tắt. Overlay là sibling của canvas nên không đi vào file export.
+ * Tạo overlay và bộ điều khiển. Overlay là sibling của canvas nên không đi vào file export.
  */
 export function ensureCompositionGuides(doc = globalThis.document) {
   if (!doc) return null;
@@ -248,33 +474,7 @@ export function ensureCompositionGuides(doc = globalThis.document) {
     frame.appendChild(overlay);
   }
 
-  let toggle = doc.getElementById('btn-toggle-guides');
-  if (!toggle) {
-    const controls = doc.querySelector('.panel-right .panel-header-right');
-    if (controls) {
-      toggle = doc.createElement('button');
-      toggle.id = 'btn-toggle-guides';
-      toggle.type = 'button';
-      toggle.className = 'composition-guides-toggle';
-      toggle.textContent = '◎ Hướng dẫn';
-      toggle.title = 'Bật hoặc tắt đường hướng dẫn bố cục';
-      toggle.setAttribute('aria-controls', 'composition-guides');
-      toggle.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        guidesVisible = !guidesVisible;
-        overlay.hidden = !guidesVisible;
-        toggle.setAttribute('aria-pressed', String(guidesVisible));
-        toggle.classList.toggle('is-active', guidesVisible);
-      });
-      controls.prepend(toggle);
-    }
-  }
-
-  if (toggle) {
-    toggle.setAttribute('aria-pressed', String(guidesVisible));
-    toggle.classList.toggle('is-active', guidesVisible);
-  }
+  ensureCompositionTools(doc, overlay);
   overlay.hidden = !guidesVisible;
   return overlay;
 }
@@ -283,8 +483,10 @@ export function ensureCompositionGuides(doc = globalThis.document) {
  * Render hướng dẫn lên preview. Không thay đổi canvas ảnh hoặc file export.
  */
 export function renderCompositionGuides({ geometry = null, result = null, profile = null } = {}, doc = globalThis.document) {
+  lastGuideContext = { geometry, result, profile };
   const overlay = ensureCompositionGuides(doc);
   if (!overlay) return null;
+  updateCompositionToolState(doc);
 
   const model = buildCompositionGuideModel({ geometry, result, profile });
   if (!model.available) {
