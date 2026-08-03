@@ -1,8 +1,13 @@
 import {
   evaluatePhotoCompliance,
+  getComplianceProfile,
   projectBoxToOutput,
   projectHorizontalLineToOutput,
 } from './compliance.js';
+import {
+  ensureCompositionGuides,
+  renderCompositionGuides,
+} from './composition-guides.js';
 import { FMTS, state } from './state.js';
 import {
   ensureCompliancePanel,
@@ -62,13 +67,10 @@ export function deriveCropRect(snapshot) {
 }
 
 /**
- * Chuyển face geometry sang hệ tọa độ ảnh xuất rồi chạy rule engine.
- * Hàm thuần để có thể unit test mà không phụ thuộc DOM/state toàn cục.
- *
- * @param {object} options
- * @returns {ReturnType<typeof evaluatePhotoCompliance>}
+ * Chiếu toàn bộ geometry nhận diện sang hệ tọa độ ảnh xuất.
+ * Checker và visual guides cùng dùng hàm này để không lệch tọa độ.
  */
-export function evaluateDetectedPhotoCompliance({
+export function projectDetectedPhotoGeometry({
   formatKey,
   outputSize,
   cropRect,
@@ -109,14 +111,65 @@ export function evaluateDetectedPhotoCompliance({
         resultOffsetPct,
       });
 
-  return evaluatePhotoCompliance({
+  return {
     formatKey,
-    photoSize: outputSize,
+    outputSize: { width: outputSize.width, height: outputSize.height },
     faceCount,
     faceBox,
     headBox,
     eyeLineY,
+  };
+}
+
+/**
+ * Chuyển face geometry sang hệ tọa độ ảnh xuất rồi chạy rule engine.
+ * Hàm thuần để có thể unit test mà không phụ thuộc DOM/state toàn cục.
+ *
+ * @param {object} options
+ * @returns {ReturnType<typeof evaluatePhotoCompliance>}
+ */
+export function evaluateDetectedPhotoCompliance(options) {
+  const geometry = projectDetectedPhotoGeometry(options);
+  return evaluatePhotoCompliance({
+    formatKey: geometry.formatKey,
+    photoSize: geometry.outputSize,
+    faceCount: geometry.faceCount,
+    faceBox: geometry.faceBox,
+    headBox: geometry.headBox,
+    eyeLineY: geometry.eyeLineY,
   });
+}
+
+function buildCurrentComplianceSnapshot() {
+  const format = FMTS[state.curFmt];
+  if (!format || !state.origImg) {
+    state.complianceResult = null;
+    return { geometry: null, profile: null, result: null };
+  }
+
+  const cropRect = deriveCropRect(state);
+  const geometry = projectDetectedPhotoGeometry({
+    formatKey: state.curFmt,
+    outputSize: { width: format.w, height: format.h },
+    cropRect,
+    resultOffsetPct: state.resultFaceOffsetPct,
+    faceData: state.faceData,
+  });
+  const result = evaluatePhotoCompliance({
+    formatKey: geometry.formatKey,
+    photoSize: geometry.outputSize,
+    faceCount: geometry.faceCount,
+    faceBox: geometry.faceBox,
+    headBox: geometry.headBox,
+    eyeLineY: geometry.eyeLineY,
+  });
+
+  state.complianceResult = result;
+  return {
+    geometry,
+    profile: getComplianceProfile(state.curFmt),
+    result,
+  };
 }
 
 /**
@@ -125,35 +178,22 @@ export function evaluateDetectedPhotoCompliance({
  * @returns {ReturnType<typeof evaluatePhotoCompliance>|null}
  */
 export function refreshComplianceResult() {
-  const format = FMTS[state.curFmt];
-  if (!format || !state.origImg) {
-    state.complianceResult = null;
-    return null;
-  }
-
-  const cropRect = deriveCropRect(state);
-  const result = evaluateDetectedPhotoCompliance({
-    formatKey: state.curFmt,
-    outputSize: { width: format.w, height: format.h },
-    cropRect,
-    resultOffsetPct: state.resultFaceOffsetPct,
-    faceData: state.faceData,
-  });
-
-  state.complianceResult = result;
-  return result;
+  return buildCurrentComplianceSnapshot().result;
 }
 
 /**
- * Tính lại compliance và render panel hiện tại.
+ * Tính lại compliance, render panel và cập nhật visual guides hiện tại.
  *
  * @param {Document} documentRef
  * @returns {ReturnType<typeof evaluatePhotoCompliance>|null}
  */
 export function refreshComplianceView(documentRef = globalThis.document) {
-  const result = refreshComplianceResult();
-  if (documentRef) renderCompliancePanel(result, documentRef);
-  return result;
+  const snapshot = buildCurrentComplianceSnapshot();
+  if (documentRef) {
+    renderCompliancePanel(snapshot.result, documentRef);
+    renderCompositionGuides(snapshot, documentRef);
+  }
+  return snapshot.result;
 }
 
 /**
@@ -189,6 +229,7 @@ export function startComplianceLiveUpdates({
   }
 
   ensureCompliancePanel(documentRef);
+  ensureCompositionGuides(documentRef);
   if (complianceLiveTimerId) return stopComplianceLiveUpdates;
 
   const tick = () => {
@@ -207,6 +248,7 @@ export function startComplianceLiveUpdates({
       lastComplianceGeometrySignature = '';
       state.complianceResult = null;
       renderCompliancePanel(null, documentRef);
+      renderCompositionGuides({}, documentRef);
     }
   };
 

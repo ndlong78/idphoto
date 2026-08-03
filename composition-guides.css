@@ -1,0 +1,264 @@
+.result-visa-frame {
+  overflow: hidden;
+}
+
+.result-visa-frame > #result-canvas {
+  position: relative;
+  z-index: 1;
+}
+
+.composition-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.composition-guides[hidden],
+.composition-guides [hidden] {
+  display: none !important;
+}
+
+.composition-center-band,
+.composition-eye-band {
+  position: absolute;
+  pointer-events: none;
+}
+
+.composition-center-band {
+  top: 0;
+  bottom: 0;
+  background: rgba(74, 158, 255, 0.07);
+  border-left: 1px dashed rgba(74, 158, 255, 0.34);
+  border-right: 1px dashed rgba(74, 158, 255, 0.34);
+}
+
+.composition-center-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px solid rgba(74, 158, 255, 0.92);
+  filter: drop-shadow(0 0 3px rgba(74, 158, 255, 0.55));
+}
+
+.composition-center-line::before,
+.composition-eye-target::before,
+.composition-eye-line::before {
+  content: '';
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.composition-center-line::before {
+  top: 10px;
+  left: -4px;
+  color: #4a9eff;
+}
+
+.composition-eye-band {
+  left: 0;
+  right: 0;
+  background: rgba(212, 175, 80, 0.10);
+  border-top: 1px dashed rgba(240, 207, 122, 0.55);
+  border-bottom: 1px dashed rgba(240, 207, 122, 0.55);
+}
+
+.composition-eye-band.is-approximate {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(212, 175, 80, 0.10),
+    rgba(212, 175, 80, 0.10) 7px,
+    rgba(212, 175, 80, 0.04) 7px,
+    rgba(212, 175, 80, 0.04) 14px
+  );
+}
+
+.composition-eye-target,
+.composition-eye-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+}
+
+.composition-eye-target {
+  border-top: 1px dashed rgba(240, 207, 122, 0.9);
+  color: #f0cf7a;
+}
+
+.composition-eye-target::before {
+  right: 8px;
+  top: -4px;
+}
+
+.composition-eye-line {
+  border-top: 2px solid currentColor;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+.composition-eye-line::before {
+  left: 8px;
+  top: -4px;
+}
+
+.composition-eye-line.is-ok {
+  color: #34d399;
+}
+
+.composition-eye-line.is-warning {
+  color: #fbbf24;
+}
+
+.composition-eye-line.is-neutral {
+  color: #8a9ab5;
+}
+
+.composition-face-box,
+.composition-head-box {
+  position: absolute;
+  border: 2px solid currentColor;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgba(8, 12, 20, 0.35), inset 0 0 18px rgba(8, 12, 20, 0.14);
+}
+
+.composition-face-box::after,
+.composition-head-box::after {
+  position: absolute;
+  left: 6px;
+  top: 5px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(8, 12, 20, 0.78);
+  color: currentColor;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.composition-face-box::after {
+  content: 'KHUÔN MẶT AI';
+}
+
+.composition-head-box::after {
+  content: 'CHIỀU CAO ĐẦU';
+}
+
+.composition-face-box.is-ok,
+.composition-head-box.is-ok {
+  color: #34d399;
+}
+
+.composition-face-box.is-warning,
+.composition-head-box.is-warning {
+  color: #fbbf24;
+}
+
+.composition-face-box.is-neutral,
+.composition-head-box.is-neutral {
+  color: #8a9ab5;
+}
+
+.composition-head-box {
+  border-style: dashed;
+  border-radius: 6px;
+}
+
+.composition-guides-legend {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(8, 12, 20, 0.74);
+  color: #dbe7f7;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  backdrop-filter: blur(5px);
+}
+
+.composition-guide-hint {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 12, 20, 0.82);
+  color: #e8edf5;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  backdrop-filter: blur(6px);
+}
+
+.composition-guide-hint.is-ok {
+  border-color: rgba(52, 211, 153, 0.45);
+  color: #7ee7be;
+}
+
+.composition-guide-hint.is-warning {
+  border-color: rgba(251, 191, 36, 0.52);
+  color: #f9d66f;
+}
+
+.composition-guide-hint.is-neutral {
+  color: #a8b5ca;
+}
+
+.composition-guides-toggle {
+  min-height: 25px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: #1a2438;
+  color: #8a9ab5;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.composition-guides-toggle:hover,
+.composition-guides-toggle:focus-visible {
+  border-color: rgba(212, 175, 80, 0.65);
+  color: #f0cf7a;
+}
+
+.composition-guides-toggle.is-active {
+  border-color: rgba(74, 158, 255, 0.48);
+  background: rgba(74, 158, 255, 0.12);
+  color: #7db8ff;
+}
+
+@media (max-width: 760px) {
+  .composition-guides-legend {
+    font-size: 8px;
+  }
+
+  .composition-guide-hint {
+    left: 7px;
+    right: 7px;
+    bottom: 7px;
+    padding: 6px 8px;
+    font-size: 9px;
+  }
+
+  .composition-face-box::after,
+  .composition-head-box::after {
+    font-size: 8px;
+  }
+}
