@@ -10,6 +10,7 @@
     "test:e2e": "playwright test",
     "test:e2e:desktop": "playwright test --project=chromium-desktop",
     "test:e2e:mobile": "playwright test --project=chromium-mobile",
+    "test:e2e:journey": "playwright test e2e/upload-export-journey.desktop.spec.js --project=chromium-desktop",
     "lint": "eslint src/ tests/ e2e/ scripts/ playwright.config.js",
     "lint:fix": "eslint src/ tests/ e2e/ scripts/ playwright.config.js --fix"
   },
