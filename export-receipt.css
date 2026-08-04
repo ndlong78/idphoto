@@ -1,0 +1,130 @@
+.export-receipt-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.export-receipt-panel.is-success {
+  border-color: rgba(52, 211, 153, 0.34);
+  background: rgba(16, 185, 129, 0.07);
+}
+
+.export-receipt-panel.is-fallback {
+  border-color: rgba(251, 191, 36, 0.42);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.export-receipt-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.export-receipt-top strong {
+  font-size: 0.82rem;
+}
+
+.export-receipt-badge {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.export-receipt-panel.is-success .export-receipt-badge {
+  background: rgba(52, 211, 153, 0.18);
+}
+
+.export-receipt-panel.is-fallback .export-receipt-badge {
+  background: rgba(251, 191, 36, 0.2);
+}
+
+.export-receipt-summary {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.export-receipt-filename {
+  display: block;
+  margin-top: 8px;
+  padding: 7px 8px;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.45);
+  font-size: 0.67rem;
+  line-height: 1.4;
+}
+
+.export-receipt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.export-receipt-meta:empty {
+  display: none;
+}
+
+.export-receipt-meta span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+  font-size: 0.64rem;
+}
+
+.export-receipt-entries {
+  display: grid;
+  gap: 6px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.export-receipt-entries li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.export-receipt-entries code {
+  overflow-wrap: anywhere;
+  font-size: 0.63rem;
+}
+
+.export-receipt-entries span {
+  color: var(--muted, #94a3b8);
+  font-size: 0.61rem;
+  white-space: nowrap;
+}
+
+.export-receipt-note {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted, #94a3b8);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 520px) {
+  .export-receipt-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .export-receipt-entries li {
+    grid-template-columns: 1fr;
+  }
+}

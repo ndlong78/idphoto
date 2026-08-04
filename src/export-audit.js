@@ -1,6 +1,7 @@
 import { downloadBlobFile } from './download.js';
 import { createExportBundle } from './export-bundle.js';
 import { consumeStagedExportForBundle } from './export-delivery-session.js';
+import { recordExportReceipt } from './export-receipt.js';
 
 function asIsoTimestamp(value) {
   const date = value instanceof Date ? value : new Date(value ?? Date.now());
@@ -145,6 +146,19 @@ export function downloadExportAudit(
         auditContent: content,
       });
       downloadBlobFile(bundle.blob, bundle.filename, downloadOptions);
+      recordExportReceipt({
+        delivery: 'bundle-zip',
+        filename: bundle.filename,
+        sizeBytes: bundle.sizeBytes,
+        mimeType: 'application/zip',
+        mode: audit?.export?.mode,
+        formatKey: audit?.profile?.formatKey,
+        widthPx: audit?.export?.widthPx,
+        heightPx: audit?.export?.heightPx,
+        dpi: audit?.export?.dpi,
+        entries: bundle.entries,
+        note: 'Gói ZIP chứa ảnh xuất và audit JSON.',
+      });
       return {
         filename: bundle.filename,
         sizeBytes: bundle.sizeBytes,
@@ -157,11 +171,37 @@ export function downloadExportAudit(
         { type: stagedExport.mimeType ?? 'application/octet-stream' },
       );
       downloadBlobFile(fallbackBlob, stagedExport.filename, downloadOptions);
+      recordExportReceipt({
+        delivery: 'image-fallback',
+        status: 'fallback',
+        filename: stagedExport.filename,
+        sizeBytes: stagedExport.bytes.length,
+        mimeType: stagedExport.mimeType,
+        mode: audit?.export?.mode,
+        formatKey: audit?.profile?.formatKey,
+        widthPx: stagedExport.width,
+        heightPx: stagedExport.height,
+        dpi: stagedExport.targetDpi,
+        note: 'Ảnh đã tải thành công, nhưng gói ZIP và audit JSON chưa được tạo.',
+      });
+      if (error && typeof error === 'object') {
+        error.imageFallbackDownloaded = true;
+        error.fallbackFilename = stagedExport.filename;
+      }
       throw error;
     }
   }
 
   const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
   downloadBlobFile(blob, auditFilename, downloadOptions);
+  recordExportReceipt({
+    delivery: 'audit-json',
+    filename: auditFilename,
+    sizeBytes: blob.size,
+    mimeType: 'application/json',
+    mode: audit?.export?.mode,
+    formatKey: audit?.profile?.formatKey,
+    note: 'Audit JSON đã được gửi tới trình duyệt để tải xuống.',
+  });
   return { filename: auditFilename, sizeBytes: blob.size, bundled: false };
 }
