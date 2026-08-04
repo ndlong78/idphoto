@@ -83,6 +83,27 @@ npm run lint
 npm run lint:fix
 ```
 
+### Browser export E2E
+
+Playwright được ghim ở phiên bản `1.61.1` trong workflow nhưng không được thêm vào dependency/lockfile của website. Để chạy local:
+
+```bash
+# Cài test runner mà không thay đổi package.json/package-lock.json
+npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.61.1
+
+# Chỉ cần Chromium cho bộ test hiện tại
+npx playwright install chromium
+
+# Chạy desktop + mobile Chromium
+npm run test:e2e
+
+# Hoặc chạy riêng từng project
+npm run test:e2e:desktop
+npm run test:e2e:mobile
+```
+
+Bộ E2E dùng `scripts/static-server.mjs`, không gọi AI/CDN và kiểm tra download event thật, nội dung ZIP, receipt cùng recovery controls. Report local nằm trong `playwright-report/`; trace, screenshot và video chỉ được giữ khi test thất bại.
+
 ## Yêu cầu mạng
 
 Lần đầu tải model AI (~50MB):
