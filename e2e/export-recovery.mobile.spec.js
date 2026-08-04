@@ -48,6 +48,11 @@ test('recovery actions xếp dọc, không tràn viewport và có trạng thái 
   await expect(imageButton).toBeVisible();
   await expect(panel).toHaveAttribute('aria-live', 'polite');
   await expect(page.locator('#export-receipt-action-status')).toHaveAttribute('role', 'status');
+  await page.waitForFunction(() => (
+    [...document.styleSheets].some((sheet) => (
+      sheet.href?.endsWith('/export-receipt.css') && sheet.cssRules.length > 0
+    ))
+  ));
 
   const layout = await page.locator('#export-receipt-actions button').evaluateAll((buttons) => (
     buttons.map((button) => {
