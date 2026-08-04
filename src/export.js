@@ -1,3 +1,4 @@
+import './export-receipt-auto.js';
 import { downloadBlobFile } from './download.js';
 import {
   clearStagedExportForBundle,
