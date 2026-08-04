@@ -24,8 +24,8 @@ export default [
     },
   },
   {
-    // Test files can use Node globals freely
-    files: ['tests/**/*.js'],
+    // Unit, E2E and local test-server files can use Node globals freely.
+    files: ['tests/**/*.js', 'e2e/**/*.js', 'scripts/**/*.mjs', 'playwright.config.js'],
     languageOptions: {
       globals: {
         ...globals.node,
