@@ -69,13 +69,14 @@ export function buildExportReadiness({
   const backgroundUnavailable = backgroundQualityResult?.automatedStatus === 'unavailable';
   const missingCriticalResult = missingSections.length > 0;
   const manualReviewIncomplete = manualReviewTrackingEnabled && manualReview.counts.pending > 0;
-  const requiresConfirmation = (
-    warnings.length > 0
-    || scopeRequiresConfirmation
-    || backgroundUnavailable
-    || missingCriticalResult
-    || manualReviewIncomplete
+  const confirmationItemCount = (
+    warnings.length
+    + (manualReviewIncomplete ? manualReview.counts.pending : 0)
+    + (backgroundUnavailable ? 1 : 0)
+    + missingSections.length
+    + (scopeRequiresConfirmation ? 1 : 0)
   );
+  const requiresConfirmation = confirmationItemCount > 0;
 
   let tone = 'ready';
   let statusLabel = 'Sẵn sàng tải';
@@ -84,7 +85,7 @@ export function buildExportReadiness({
 
   if (requiresConfirmation) {
     tone = 'review';
-    statusLabel = `Cần xác nhận · ${warnings.length}`;
+    statusLabel = `Cần xác nhận · ${confirmationItemCount}`;
     title = 'Kiểm tra lại trước khi tải';
     const reasons = [];
     if (warnings.length > 0) reasons.push(`${warnings.length} cảnh báo tự động`);
@@ -123,6 +124,7 @@ export function buildExportReadiness({
     manualReviewTrackingEnabled,
     manualReviewIncomplete,
     counts: {
+      confirmation: confirmationItemCount,
       warning: warnings.length,
       manual: manualItems.length,
       manualReviewed: manualReviewTrackingEnabled ? manualReview.counts.reviewed : 0,
