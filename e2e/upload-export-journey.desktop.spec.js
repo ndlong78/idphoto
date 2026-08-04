@@ -94,6 +94,13 @@ async function waitForEditor(page) {
   expect(canvasState.height).toBeGreaterThan(0);
 }
 
+async function waitForUiRendering(page) {
+  await page.evaluate(() => new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  }));
+  await page.waitForTimeout(100);
+}
+
 async function confirmAndCaptureDownload(page, triggerSelector) {
   await page.locator(triggerSelector).click();
   const dialog = page.locator('#export-readiness-dialog');
@@ -189,6 +196,7 @@ test('upload → editor → chỉnh preset → xác nhận → tải JPG thật 
   });
   await expect(page.locator('#bv')).toHaveText('12');
   await expect(page.locator('button.sw[data-c="201,223,240"]')).toHaveClass(/active/);
+  await waitForUiRendering(page);
 
   const download = await confirmAndCaptureDownload(page, '#btn-jpg-300');
   const expectedFilename = 'photovisa_us-visa_602x602_300dpi.jpeg';
