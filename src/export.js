@@ -3,6 +3,7 @@ import {
   clearStagedExportForBundle,
   stageExportForBundle,
 } from './export-delivery-session.js';
+import { recordExportReceipt } from './export-receipt.js';
 import { canvasToDpiBlob } from './image-metadata.js';
 import { manualReviewStore } from './manual-review.js';
 import { renderResult } from './render.js';
@@ -92,5 +93,17 @@ export async function downloadWithDpi(mode) {
 
   clearStagedExportForBundle();
   downloadBlobFile(blob, filename);
+  recordExportReceipt({
+    delivery: 'image',
+    filename,
+    sizeBytes: blob.size,
+    mimeType: config.mimeType,
+    mode,
+    formatKey: state.curFmt,
+    widthPx: config.width,
+    heightPx: config.height,
+    dpi: config.targetDpi,
+    note: 'Ảnh đã được gửi tới trình duyệt để tải xuống.',
+  });
   return exportResult;
 }
