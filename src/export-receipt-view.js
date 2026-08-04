@@ -159,6 +159,7 @@ function setRecoveryBusy(panel, busy) {
 export function renderExportReceipt(receipt, doc = globalThis.document) {
   const panel = ensureExportReceiptPanel(doc);
   if (!panel) return null;
+  const wasBusy = panel.dataset.recoveryBusy === 'true';
   const model = buildExportReceiptViewModel(receipt);
   panel.className = `export-receipt-panel is-${model.tone}`;
   setText(doc.getElementById('export-receipt-badge'), model.badge);
@@ -200,7 +201,11 @@ export function renderExportReceipt(receipt, doc = globalThis.document) {
       button.dataset.recoveryAction = action.id;
     }
   }
-  setRecoveryBusy(panel, false);
+
+  if (!wasBusy) {
+    setText(doc.getElementById('export-receipt-action-status'), '');
+  }
+  setRecoveryBusy(panel, wasBusy);
   return panel;
 }
 
