@@ -109,9 +109,8 @@ export function renderExportReadinessPanel(readiness, doc = globalThis.document)
   setText(doc.getElementById('export-readiness-summary'), model.summary);
   setText(doc.getElementById('export-readiness-warning-count'), `${model.warningCount} cảnh báo`);
   setText(doc.getElementById('export-readiness-manual-count'), `${model.manualCount} thủ công`);
-  const note = doc.getElementById('export-readiness-note');
   setText(
-    note,
+    doc.getElementById('export-readiness-note'),
     model.requiresConfirmation
       ? 'Nút tải sẽ mở bước xác nhận; ảnh vẫn có thể được tải xuống.'
       : 'Không cần xác nhận thêm; nút tải sẽ hoạt động ngay.',
@@ -183,7 +182,6 @@ function ensureDialog(doc) {
   const proceed = appendText(doc, actions, 'button', 'export-readiness-proceed', 'Vẫn tải xuống');
   proceed.type = 'button';
   proceed.dataset.action = 'proceed';
-  actions.append(cancel, proceed);
   card.appendChild(actions);
   dialog.appendChild(card);
   doc.body?.appendChild(dialog);
@@ -231,13 +229,11 @@ function renderDialog(readiness, doc, dialog) {
     renderList(doc, warnings, readiness.warnings, 'Không có cảnh báo tự động.');
   }
 
-  const missingItems = [
-    ...readiness.missingSections.map((section) => ({
-      sectionLabel: section.label,
-      label: 'Chưa có kết quả',
-      message: 'Checker chưa tạo được kết quả cho nhóm này.',
-    })),
-  ];
+  const missingItems = readiness.missingSections.map((section) => ({
+    sectionLabel: section.label,
+    label: 'Chưa có kết quả',
+    message: 'Checker chưa tạo được kết quả cho nhóm này.',
+  }));
   if (readiness.backgroundUnavailable) {
     missingItems.push({
       sectionLabel: 'Chất lượng tách nền',
@@ -273,7 +269,7 @@ function openDialog(dialog) {
   }
 }
 
-function closeDialog(dialog, value) {
+function closeDialog(dialog, value, doc) {
   if (typeof dialog.close === 'function') {
     dialog.close(value);
   } else {
@@ -281,7 +277,8 @@ function closeDialog(dialog, value) {
     dialog.hidden = true;
     dialog.removeAttribute('open');
     dialog.classList.remove('is-fallback-open');
-    dialog.dispatchEvent(new Event('close'));
+    const EventConstructor = doc.defaultView?.Event ?? globalThis.Event;
+    dialog.dispatchEvent(new EventConstructor('close'));
   }
 }
 
@@ -291,31 +288,35 @@ export function confirmExportReadiness(readiness, doc = globalThis.document) {
   if (pendingConfirmation) return pendingConfirmation;
 
   const dialog = renderDialog(readiness, doc, ensureDialog(doc));
+  const cancelButton = dialog.querySelector('[data-action="cancel"]');
+  const proceedButton = dialog.querySelector('[data-action="proceed"]');
+
   pendingConfirmation = new Promise((resolve) => {
+    const cleanup = () => {
+      dialog.onclose = null;
+      dialog.oncancel = null;
+      if (cancelButton) cancelButton.onclick = null;
+      if (proceedButton) proceedButton.onclick = null;
+    };
     const settle = (allowed) => {
+      cleanup();
       pendingConfirmation = null;
       resolve(allowed);
     };
-    const onClose = () => {
-      dialog.removeEventListener('close', onClose);
-      settle(dialog.returnValue === 'proceed');
-    };
-    dialog.addEventListener('close', onClose, { once: true });
-    dialog.querySelector('[data-action="cancel"]')?.addEventListener(
-      'click',
-      () => closeDialog(dialog, 'cancel'),
-      { once: true },
-    );
-    dialog.querySelector('[data-action="proceed"]')?.addEventListener(
-      'click',
-      () => closeDialog(dialog, 'proceed'),
-      { once: true },
-    );
-    dialog.addEventListener('cancel', (event) => {
+
+    dialog.onclose = () => settle(dialog.returnValue === 'proceed');
+    dialog.oncancel = (event) => {
       event.preventDefault();
-      closeDialog(dialog, 'cancel');
-    }, { once: true });
-    openDialog(dialog);
+      closeDialog(dialog, 'cancel', doc);
+    };
+    if (cancelButton) cancelButton.onclick = () => closeDialog(dialog, 'cancel', doc);
+    if (proceedButton) proceedButton.onclick = () => closeDialog(dialog, 'proceed', doc);
+
+    try {
+      openDialog(dialog);
+    } catch {
+      settle(false);
+    }
   });
   return pendingConfirmation;
 }
