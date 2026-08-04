@@ -7,8 +7,11 @@
     "test": "node --test tests/*.test.js",
     "test:watch": "node --test --watch tests/*.test.js",
     "test:coverage": "node --experimental-test-coverage --test tests/*.test.js",
-    "lint": "eslint src/ tests/",
-    "lint:fix": "eslint src/ tests/ --fix"
+    "test:e2e": "playwright test",
+    "test:e2e:desktop": "playwright test --project=chromium-desktop",
+    "test:e2e:mobile": "playwright test --project=chromium-mobile",
+    "lint": "eslint src/ tests/ e2e/ scripts/ playwright.config.js",
+    "lint:fix": "eslint src/ tests/ e2e/ scripts/ playwright.config.js --fix"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
