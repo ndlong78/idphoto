@@ -1,0 +1,91 @@
+.image-quality-card {
+  margin: 14px 0;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(18, 26, 42, 0.78);
+  color: #e8edf5;
+}
+.image-quality-header,.image-quality-heading,.image-quality-intro,.image-quality-check-top,.image-quality-footer {
+  display: flex;
+  align-items: center;
+}
+.image-quality-header { justify-content: space-between; gap: 14px; }
+.image-quality-heading { gap: 10px; }
+.image-quality-heading-icon {
+  display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px;
+  background: rgba(125, 184, 255, 0.12); color: #7db8ff; font-size: 18px;
+}
+.image-quality-heading h3,.image-quality-intro strong { margin: 0; font-size: 14px; }
+.image-quality-heading p,.image-quality-intro p,.image-quality-check-body p,.image-quality-disclaimer {
+  margin: 3px 0 0; color: #a8b5ca; font-size: 11px; line-height: 1.45;
+}
+.image-quality-status {
+  flex: 0 0 auto; padding: 5px 9px; border-radius: 999px; font-size: 10px; font-weight: 700;
+}
+.image-quality-status.is-neutral { background: rgba(138,154,181,.12); color: #a8b5ca; }
+.image-quality-status.is-ok { background: rgba(52,211,153,.12); color: #7ee7be; }
+.image-quality-status.is-warning { background: rgba(251,191,36,.13); color: #f9d66f; }
+.image-quality-intro { margin-top: 13px; padding-top: 13px; border-top: 1px solid rgba(255,255,255,.07); }
+.image-quality-counters {
+  display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 12px;
+}
+.image-quality-counter {
+  padding: 9px 10px; border: 1px solid rgba(255,255,255,.07); border-radius: 9px;
+  background: rgba(8,12,20,.24);
+}
+.image-quality-counter strong,.image-quality-counter span { display: block; }
+.image-quality-counter strong { font-size: 17px; }
+.image-quality-counter span { margin-top: 2px; color: #a8b5ca; font-size: 9px; }
+.image-quality-counter.is-warning strong { color: #fbbf24; }
+.image-quality-counter.is-pass strong { color: #34d399; }
+.image-quality-counter.is-unavailable strong { color: #8a9ab5; }
+.image-quality-details { margin-top: 12px; }
+.image-quality-details > summary {
+  padding: 8px 0; color: #dbe7f7; font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.image-quality-details > summary:focus-visible {
+  outline: 2px solid #7db8ff; outline-offset: 3px; border-radius: 3px;
+}
+.image-quality-check-list {
+  display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 5px;
+}
+.image-quality-check {
+  display: grid; grid-template-columns: 25px minmax(0,1fr); gap: 8px; padding: 10px;
+  border: 1px solid rgba(255,255,255,.07); border-radius: 9px; background: rgba(8,12,20,.28);
+}
+.image-quality-check.is-warning { border-color: rgba(251,191,36,.26); }
+.image-quality-check.is-pass { border-color: rgba(52,211,153,.19); }
+.image-quality-check-icon {
+  display: grid; width: 23px; height: 23px; place-items: center; border-radius: 50%;
+  background: rgba(138,154,181,.12); color: #a8b5ca; font-weight: 800;
+}
+.image-quality-check.is-warning .image-quality-check-icon {
+  background: rgba(251,191,36,.13); color: #fbbf24;
+}
+.image-quality-check.is-pass .image-quality-check-icon {
+  background: rgba(52,211,153,.12); color: #34d399;
+}
+.image-quality-check-top { flex-wrap: wrap; gap: 6px; }
+.image-quality-check-top strong { font-size: 11px; }
+.image-quality-check-state,.image-quality-check-approx {
+  padding: 2px 5px; border-radius: 999px; background: rgba(138,154,181,.11);
+  color: #a8b5ca; font-size: 8px; font-weight: 700;
+}
+.image-quality-check-approx { color: #f0cf7a; }
+.image-quality-footer {
+  justify-content: space-between; gap: 12px; margin-top: 13px; padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.image-quality-local { flex: 0 0 auto; color: #7ee7be; font-size: 9px; font-weight: 700; }
+.image-quality-disclaimer { text-align: right; }
+.image-quality-empty { color: #a8b5ca; font-size: 11px; }
+@media (max-width: 760px) {
+  .image-quality-header,.image-quality-footer { align-items: flex-start; flex-direction: column; }
+  .image-quality-status { align-self: flex-start; }
+  .image-quality-check-list { grid-template-columns: 1fr; }
+  .image-quality-disclaimer { text-align: left; }
+}
+@media (max-width: 480px) {
+  .image-quality-counters { grid-template-columns: 1fr; }
+}
