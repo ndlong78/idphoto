@@ -95,9 +95,11 @@ test('checklist chưa hoàn tất yêu cầu xác nhận nhưng không tạo war
   const readiness = cleanReadiness(new Set(['composition:recent']));
   assert.equal(readiness.requiresConfirmation, true);
   assert.equal(readiness.manualReviewIncomplete, true);
+  assert.equal(readiness.counts.confirmation, 1);
   assert.equal(readiness.counts.warning, 0);
   assert.equal(readiness.counts.manualReviewed, 1);
   assert.equal(readiness.counts.manualPending, 1);
+  assert.match(readiness.statusLabel, /1/);
   assert.match(readiness.summary, /1 mục thủ công chưa đối chiếu/);
 });
 
