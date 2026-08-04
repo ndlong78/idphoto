@@ -1,6 +1,10 @@
 import { loadFaceModels, runBackgroundRemoval, warmupAi } from './ai.js';
-import { refreshComplianceResult } from './compliance-pipeline.js';
+import {
+  refreshComplianceResult,
+  refreshExportReadiness,
+} from './compliance-pipeline.js';
 import { downloadWithDpi } from './export.js';
+import { confirmExportReadiness } from './export-readiness-view.js';
 import { detectFacesWithLandmarks } from './face-detection.js';
 import { nextStep, STEPS } from './pipeline.js';
 import { renderToPreview } from './render.js';
@@ -23,7 +27,6 @@ import {
 let pipelineStep = STEPS.IDLE;
 let isProcessing = false;
 let activeRunId = 0;
-
 
 export function assertBrowserFileInput(file, context = 'main.handleFile') {
   if (!(file instanceof File)) {
@@ -192,8 +195,6 @@ async function processFile(file, runId) {
 }
 
 async function reprocessAI() {
-  // FIX [CRITICAL]: Guard isProcessing — tránh reprocessAI() chạy đồng thời
-  // với handleFile() hoặc với chính nó khi user click nhiều lần.
   if (isProcessing) {
     toast('Đang xử lý, vui lòng đợi...', 'err');
     return;
@@ -260,10 +261,32 @@ document.addEventListener('DOMContentLoaded', () => {
     onPickFile:    openFilePicker,
     onReprocessAI: reprocessAI,
     onDownload: async (mode) => {
+      const readiness = refreshExportReadiness(document);
+      const confirmed = await confirmExportReadiness(readiness, document);
+      logEvent('asset.download_readiness', {
+        mode,
+        format: state.curFmt,
+        confirmed,
+        confirmationRequired: readiness.requiresConfirmation,
+        warningCount: readiness.counts.warning,
+        manualCount: readiness.counts.manual,
+        supportLevel: readiness.supportLevel,
+        backgroundUnavailable: readiness.backgroundUnavailable,
+      });
+      if (!confirmed) {
+        toast('Đã quay lại chỉnh sửa ảnh.', 'ok');
+        return;
+      }
+
       await downloadWithDpi(mode);
       setSteps(4);
       toast('✅ Đã tải ảnh thành công', 'ok');
-      logEvent('asset.download', { mode, format: state.curFmt });
+      logEvent('asset.download', {
+        mode,
+        format: state.curFmt,
+        readinessOverride: readiness.requiresConfirmation,
+        warningCount: readiness.counts.warning,
+      });
     },
     onCopy: async () => {
       const result = await copyToClipboard();
