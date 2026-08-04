@@ -134,17 +134,38 @@ test('us-visa: áp dụng đúng dải chiều cao đầu và đường mắt ch
   assert.equal(byId(fail, 'eye-line').status, COMPLIANCE_STATUS.WARNING);
 });
 
-test('preset chưa có rule riêng dùng generic profile và không phát minh tỷ lệ', () => {
-  assert.equal(getComplianceProfile('schengen').key, 'generic');
+test('schengen: có profile nguồn chính thức nhưng không phát minh tỷ lệ hình học', () => {
+  const profile = getComplianceProfile('schengen');
+  assert.equal(profile.key, 'schengen-source-backed');
+  assert.equal(profile.supportLevel, 'official-manual-only');
+  assert.equal(profile.faceAreaRange, null);
+  assert.equal(profile.headHeightRange, null);
+  assert.equal(profile.eyeLineFromTopRange, null);
+
   const result = evaluatePhotoCompliance({
     formatKey: 'schengen',
     photoSize: { width: 413, height: 531 },
     faceBox: { x: 90, y: 70, width: 230, height: 330 },
   });
-  assert.equal(result.profileKey, 'generic');
+  assert.equal(result.profileKey, 'schengen-source-backed');
+  assert.equal(result.profileSupportLevel, 'official-manual-only');
   assert.equal(byId(result, 'face-area').status, COMPLIANCE_STATUS.UNAVAILABLE);
   assert.equal(byId(result, 'head-height').status, COMPLIANCE_STATUS.UNAVAILABLE);
   assert.equal(byId(result, 'eye-line').status, COMPLIANCE_STATUS.UNAVAILABLE);
+  assert.equal(byId(result, 'recent').status, COMPLIANCE_STATUS.MANUAL);
+  assert.match(result.disclaimer, /35×45 mm/);
+});
+
+test('preset hoàn toàn chưa có registry vẫn dùng generic profile', () => {
+  assert.equal(getComplianceProfile('unknown-format').key, 'generic');
+  const result = evaluatePhotoCompliance({
+    formatKey: 'unknown-format',
+    photoSize: { width: 300, height: 400 },
+    faceBox: { x: 60, y: 50, width: 180, height: 260 },
+  });
+  assert.equal(result.profileKey, 'generic');
+  assert.equal(result.profileSupportLevel, 'generic');
+  assert.equal(byId(result, 'face-area').status, COMPLIANCE_STATUS.UNAVAILABLE);
 });
 
 test('đầu vào hình học sai fail-fast', () => {
