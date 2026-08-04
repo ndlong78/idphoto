@@ -1,3 +1,5 @@
+import { buildManualReviewChecklist } from './manual-review.js';
+
 const SECTION_DEFINITIONS = Object.freeze([
   Object.freeze({ key: 'image-quality', label: 'Chất lượng ảnh gốc', resultKey: 'imageQualityResult' }),
   Object.freeze({ key: 'background-quality', label: 'Chất lượng tách nền', resultKey: 'backgroundQualityResult' }),
@@ -45,24 +47,36 @@ export function buildExportReadiness({
   backgroundQualityResult = null,
   complianceResult = null,
   profile = null,
+  manualReviewCompletedKeys = null,
 } = {}) {
   const source = { imageQualityResult, backgroundQualityResult, complianceResult };
   const sections = SECTION_DEFINITIONS.map((section) => buildSection(section, source[section.resultKey]));
   const warnings = sections.flatMap((section) => section.warnings);
-  const manualItems = sections.flatMap((section) => section.manual);
+  const rawManualItems = sections.flatMap((section) => section.manual);
   const unavailableItems = sections.flatMap((section) => section.unavailable);
   const missingSections = sections.filter((section) => !section.available);
+  const manualReviewTrackingEnabled = manualReviewCompletedKeys !== null;
+  const manualReview = buildManualReviewChecklist(
+    rawManualItems,
+    manualReviewTrackingEnabled ? manualReviewCompletedKeys : new Set(),
+  );
+  const manualItems = manualReviewTrackingEnabled
+    ? manualReview.items
+    : manualReview.items.map((item) => ({ ...item, reviewed: false }));
 
   const supportLevel = profile?.supportLevel ?? 'generic';
   const scopeRequiresConfirmation = SCOPE_CONFIRMATION_LEVELS.has(supportLevel);
   const backgroundUnavailable = backgroundQualityResult?.automatedStatus === 'unavailable';
   const missingCriticalResult = missingSections.length > 0;
-  const requiresConfirmation = (
-    warnings.length > 0
-    || scopeRequiresConfirmation
-    || backgroundUnavailable
-    || missingCriticalResult
+  const manualReviewIncomplete = manualReviewTrackingEnabled && manualReview.counts.pending > 0;
+  const confirmationItemCount = (
+    warnings.length
+    + (manualReviewIncomplete ? manualReview.counts.pending : 0)
+    + (backgroundUnavailable ? 1 : 0)
+    + missingSections.length
+    + (scopeRequiresConfirmation ? 1 : 0)
   );
+  const requiresConfirmation = confirmationItemCount > 0;
 
   let tone = 'ready';
   let statusLabel = 'Sẵn sàng tải';
@@ -71,19 +85,26 @@ export function buildExportReadiness({
 
   if (requiresConfirmation) {
     tone = 'review';
-    statusLabel = `Cần xác nhận · ${warnings.length}`;
+    statusLabel = `Cần xác nhận · ${confirmationItemCount}`;
     title = 'Kiểm tra lại trước khi tải';
     const reasons = [];
     if (warnings.length > 0) reasons.push(`${warnings.length} cảnh báo tự động`);
+    if (manualReviewIncomplete) reasons.push(`${manualReview.counts.pending} mục thủ công chưa đối chiếu`);
     if (backgroundUnavailable) reasons.push('chưa kiểm tra được alpha mask AI');
     if (missingCriticalResult) reasons.push(`${missingSections.length} nhóm chưa có kết quả`);
     if (scopeRequiresConfirmation) reasons.push('preset có giới hạn phạm vi sử dụng');
     summary = `${reasons.join(', ')}. Bạn vẫn có thể tải xuống sau khi xác nhận.`;
   } else if (manualItems.length > 0) {
     tone = 'manual';
-    statusLabel = `Kiểm tra thủ công · ${manualItems.length}`;
-    title = 'Có checklist cần tự đối chiếu';
-    summary = 'Không thấy cảnh báo tự động, nhưng vẫn cần kiểm tra các yêu cầu không thể đo bằng phần mềm.';
+    if (manualReviewTrackingEnabled && manualReview.allReviewed) {
+      statusLabel = `Đã đối chiếu · ${manualReview.counts.reviewed}/${manualReview.counts.total}`;
+      title = 'Checklist thủ công đã được đánh dấu';
+      summary = 'Không thấy cảnh báo tự động. Dấu chọn chỉ ghi nhận bạn đã tự đối chiếu các yêu cầu thủ công.';
+    } else {
+      statusLabel = `Kiểm tra thủ công · ${manualItems.length}`;
+      title = 'Có checklist cần tự đối chiếu';
+      summary = 'Không thấy cảnh báo tự động, nhưng vẫn cần kiểm tra các yêu cầu không thể đo bằng phần mềm.';
+    }
   }
 
   return {
@@ -100,9 +121,14 @@ export function buildExportReadiness({
     scopeRequiresConfirmation,
     backgroundUnavailable,
     missingCriticalResult,
+    manualReviewTrackingEnabled,
+    manualReviewIncomplete,
     counts: {
+      confirmation: confirmationItemCount,
       warning: warnings.length,
       manual: manualItems.length,
+      manualReviewed: manualReviewTrackingEnabled ? manualReview.counts.reviewed : 0,
+      manualPending: manualReviewTrackingEnabled ? manualReview.counts.pending : manualItems.length,
       unavailable: unavailableItems.length,
       missingSections: missingSections.length,
     },
@@ -111,7 +137,7 @@ export function buildExportReadiness({
     unavailableItems,
     missingSections: missingSections.map((section) => ({ key: section.key, label: section.label })),
     sections,
-    disclaimer: 'Bước kiểm tra cuối chỉ tổng hợp cảnh báo kỹ thuật và phạm vi profile; quyết định chấp nhận ảnh thuộc cơ quan tiếp nhận.',
+    disclaimer: 'Bước kiểm tra cuối chỉ tổng hợp cảnh báo kỹ thuật, checklist tự đối chiếu và phạm vi profile; quyết định chấp nhận ảnh thuộc cơ quan tiếp nhận.',
   };
 }
 

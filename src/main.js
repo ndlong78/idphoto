@@ -4,11 +4,17 @@ import {
   refreshExportReadiness,
 } from './compliance-pipeline.js';
 import { downloadWithDpi } from './export.js';
+import {
+  buildExportAudit,
+  downloadExportAudit,
+} from './export-audit.js';
 import { confirmExportReadiness } from './export-readiness-view.js';
 import { detectFacesWithLandmarks } from './face-detection.js';
+import { manualReviewStore } from './manual-review.js';
+import { bindManualReviewPanel } from './manual-review-view.js';
 import { nextStep, STEPS } from './pipeline.js';
 import { renderToPreview } from './render.js';
-import { state, validateImageFile } from './state.js';
+import { FMTS, state, validateImageFile } from './state.js';
 import { logEvent, serializeErrorForTelemetry, setTelemetryContext } from './telemetry.js';
 import {
   copyToClipboard,
@@ -257,12 +263,48 @@ document.addEventListener('DOMContentLoaded', () => {
     input.click();
   };
 
+  bindManualReviewPanel({
+    documentRef: document,
+    onToggle: ({ reviewKey, reviewed }) => {
+      manualReviewStore.setItem(state.origFile, state.curFmt, reviewKey, reviewed);
+      const readiness = refreshExportReadiness(document);
+      logEvent('manual_review.item_changed', {
+        format: state.curFmt,
+        reviewKey,
+        reviewed,
+        reviewedCount: readiness.counts.manualReviewed,
+        pendingCount: readiness.counts.manualPending,
+      });
+    },
+    onToggleAll: ({ reviewed }) => {
+      const current = refreshExportReadiness(document);
+      const reviewKeys = current.manualItems.map((item) => item.reviewKey);
+      manualReviewStore.setAll(state.origFile, state.curFmt, reviewKeys, reviewed);
+      const readiness = refreshExportReadiness(document);
+      logEvent('manual_review.all_changed', {
+        format: state.curFmt,
+        reviewed,
+        itemCount: reviewKeys.length,
+        reviewedCount: readiness.counts.manualReviewed,
+      });
+    },
+    onAuditPreference: ({ enabled }) => {
+      manualReviewStore.setAuditEnabled(state.origFile, enabled);
+      refreshExportReadiness(document);
+      logEvent('manual_review.audit_preference', {
+        format: state.curFmt,
+        enabled,
+      });
+    },
+  });
+
   initUI({
     onPickFile:    openFilePicker,
     onReprocessAI: reprocessAI,
     onDownload: async (mode) => {
       const readiness = refreshExportReadiness(document);
       const confirmed = await confirmExportReadiness(readiness, document);
+      const auditEnabled = manualReviewStore.isAuditEnabled(state.origFile);
       logEvent('asset.download_readiness', {
         mode,
         format: state.curFmt,
@@ -270,22 +312,56 @@ document.addEventListener('DOMContentLoaded', () => {
         confirmationRequired: readiness.requiresConfirmation,
         warningCount: readiness.counts.warning,
         manualCount: readiness.counts.manual,
+        manualReviewedCount: readiness.counts.manualReviewed,
+        manualPendingCount: readiness.counts.manualPending,
         supportLevel: readiness.supportLevel,
         backgroundUnavailable: readiness.backgroundUnavailable,
+        auditEnabled,
       });
       if (!confirmed) {
         toast('Đã quay lại chỉnh sửa ảnh.', 'ok');
         return;
       }
 
-      await downloadWithDpi(mode);
+      const exportResult = await downloadWithDpi(mode);
+      let auditDownloaded = false;
+      if (auditEnabled) {
+        try {
+          const audit = buildExportAudit({
+            readiness,
+            exportResult,
+            format: FMTS[state.curFmt],
+            mode,
+            sourceFile: state.origFile,
+            userConfirmed: readiness.requiresConfirmation,
+          });
+          downloadExportAudit(audit);
+          auditDownloaded = true;
+        } catch (err) {
+          toast('Ảnh đã tải, nhưng chưa tải được file audit.', 'err');
+          logEvent('asset.audit_download_failed', {
+            mode,
+            format: state.curFmt,
+            error: serializeErrorForTelemetry(err, { fallbackMessage: 'Audit download failed' }),
+          }, 'warn');
+        }
+      }
+
       setSteps(4);
-      toast('✅ Đã tải ảnh thành công', 'ok');
+      toast(
+        auditDownloaded
+          ? '✅ Đã tải ảnh và bản kiểm tra JSON'
+          : '✅ Đã tải ảnh thành công',
+        'ok',
+      );
       logEvent('asset.download', {
         mode,
         format: state.curFmt,
         readinessOverride: readiness.requiresConfirmation,
         warningCount: readiness.counts.warning,
+        manualReviewedCount: readiness.counts.manualReviewed,
+        manualPendingCount: readiness.counts.manualPending,
+        auditDownloaded,
       });
     },
     onCopy: async () => {
@@ -336,6 +412,7 @@ async function handleFile(file) {
     isProcessing   = true;
     const runId    = ++activeRunId;
     pipelineStep   = STEPS.IDLE;
+    manualReviewStore.reset(safeFile);
     state.origFile = safeFile;
     state.origImg  = await loadImageFromFile(safeFile);
     state.faceData = null;

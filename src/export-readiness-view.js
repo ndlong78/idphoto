@@ -252,9 +252,17 @@ function renderDialog(readiness, doc, dialog) {
   const manualSection = doc.getElementById('export-readiness-dialog-manual-section');
   const manualSummary = doc.getElementById('export-readiness-dialog-manual-summary');
   if (manual && manualSection && manualSummary) {
-    setText(manualSummary, `Checklist thủ công · ${readiness.manualItems.length}`);
-    manualSection.hidden = readiness.manualItems.length === 0;
-    renderList(doc, manual, readiness.manualItems, 'Không có checklist thủ công.');
+    const reviewed = readiness.counts?.manualReviewed ?? 0;
+    const total = readiness.manualItems.length;
+    const pending = readiness.counts?.manualPending ?? total;
+    setText(manualSummary, `Checklist thủ công · ${reviewed}/${total} đã đối chiếu`);
+    manualSection.hidden = total === 0;
+    manualSection.open = pending > 0;
+    const dialogItems = readiness.manualItems.map((item) => ({
+      ...item,
+      label: `${item.reviewed ? 'Đã đối chiếu' : 'Chưa đối chiếu'} — ${item.label}`,
+    }));
+    renderList(doc, manual, dialogItems, 'Không có checklist thủ công.');
   }
   return dialog;
 }

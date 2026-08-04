@@ -1,0 +1,155 @@
+.manual-review-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.3);
+}
+
+.manual-review-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.manual-review-top strong {
+  font-size: 0.82rem;
+}
+
+.manual-review-status {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.16);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.manual-review-intro {
+  margin: 8px 0 0;
+  color: var(--muted, #94a3b8);
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+.manual-review-toolbar {
+  display: flex;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.manual-review-toolbar button {
+  padding: 5px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 0.67rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.manual-review-toolbar button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.manual-review-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.manual-review-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.46);
+  cursor: pointer;
+}
+
+.manual-review-item.is-reviewed {
+  border-color: rgba(52, 211, 153, 0.32);
+  background: rgba(16, 185, 129, 0.07);
+}
+
+.manual-review-item input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: #34d399;
+}
+
+.manual-review-item span {
+  display: grid;
+  gap: 3px;
+}
+
+.manual-review-item strong {
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.manual-review-item small,
+.manual-review-empty {
+  margin: 0;
+  color: var(--muted, #94a3b8);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.manual-review-audit-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 11px;
+  padding: 9px;
+  border: 1px dashed rgba(96, 165, 250, 0.34);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.manual-review-audit-toggle input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: #60a5fa;
+}
+
+.manual-review-audit-toggle span {
+  display: grid;
+  gap: 3px;
+}
+
+.manual-review-audit-toggle strong {
+  font-size: 0.72rem;
+}
+
+.manual-review-audit-toggle small,
+.manual-review-disclaimer {
+  color: var(--muted, #94a3b8);
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.manual-review-disclaimer {
+  display: block;
+  margin-top: 8px;
+}
+
+@media (max-width: 520px) {
+  .manual-review-top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .manual-review-toolbar {
+    flex-wrap: wrap;
+  }
+}
