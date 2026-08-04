@@ -8,6 +8,14 @@ import {
   ensureCompositionGuides,
   renderCompositionGuides,
 } from './composition-guides.js';
+import {
+  analyzeOriginalImageQuality,
+  evaluateImageQuality,
+} from './image-quality.js';
+import {
+  ensureImageQualityPanel,
+  renderImageQualityPanel,
+} from './image-quality-view.js';
 import { FMTS, state } from './state.js';
 import {
   ensureCompliancePanel,
@@ -23,13 +31,6 @@ function finiteOrNull(value) {
   return Number.isFinite(value) ? value : null;
 }
 
-/**
- * Tính crop rect trong hệ tọa độ ảnh gốc từ state của editor.
- * Công thức phải đồng nhất với getCropRect() trong render.js.
- *
- * @param {object} snapshot
- * @returns {{x:number,y:number,width:number,height:number}}
- */
 export function deriveCropRect(snapshot) {
   const image = snapshot?.origImg;
   const frame = snapshot?.frame;
@@ -66,10 +67,6 @@ export function deriveCropRect(snapshot) {
   };
 }
 
-/**
- * Chiếu toàn bộ geometry nhận diện sang hệ tọa độ ảnh xuất.
- * Checker và visual guides cùng dùng hàm này để không lệch tọa độ.
- */
 export function projectDetectedPhotoGeometry({
   formatKey,
   outputSize,
@@ -121,13 +118,6 @@ export function projectDetectedPhotoGeometry({
   };
 }
 
-/**
- * Chuyển face geometry sang hệ tọa độ ảnh xuất rồi chạy rule engine.
- * Hàm thuần để có thể unit test mà không phụ thuộc DOM/state toàn cục.
- *
- * @param {object} options
- * @returns {ReturnType<typeof evaluatePhotoCompliance>}
- */
 export function evaluateDetectedPhotoCompliance(options) {
   const geometry = projectDetectedPhotoGeometry(options);
   return evaluatePhotoCompliance({
@@ -172,33 +162,54 @@ function buildCurrentComplianceSnapshot() {
   };
 }
 
-/**
- * Cập nhật state.complianceResult sau khi pipeline đã có ảnh, crop và face data.
- *
- * @returns {ReturnType<typeof evaluatePhotoCompliance>|null}
- */
+function buildCurrentImageQualityResult(documentRef = globalThis.document) {
+  const format = FMTS[state.curFmt];
+  if (!format || !state.origImg || !state.origFile) {
+    state.imageQualityResult = null;
+    return null;
+  }
+
+  if (state.imageQualitySourceFile !== state.origFile) {
+    state.imageQualitySourceFile = state.origFile;
+    state.imageQualityMetrics = null;
+    state.imageQualityResult = null;
+  }
+
+  if (!state.imageQualityMetrics && documentRef) {
+    const canvas = documentRef.getElementById('orig-canvas');
+    if (canvas && Number.isFinite(canvas.width) && Number.isFinite(canvas.height)
+      && canvas.width > 0 && canvas.height > 0) {
+      state.imageQualityMetrics = analyzeOriginalImageQuality(canvas, state.faceData);
+    }
+  }
+
+  state.imageQualityResult = evaluateImageQuality({
+    metrics: state.imageQualityMetrics,
+    format,
+    formatKey: state.curFmt,
+  });
+  return state.imageQualityResult;
+}
+
+export function refreshImageQualityResult(documentRef = globalThis.document) {
+  return buildCurrentImageQualityResult(documentRef);
+}
+
 export function refreshComplianceResult() {
   return buildCurrentComplianceSnapshot().result;
 }
 
-/**
- * Tính lại compliance, render panel và cập nhật visual guides hiện tại.
- *
- * @param {Document} documentRef
- * @returns {ReturnType<typeof evaluatePhotoCompliance>|null}
- */
 export function refreshComplianceView(documentRef = globalThis.document) {
   const snapshot = buildCurrentComplianceSnapshot();
+  const qualityResult = buildCurrentImageQualityResult(documentRef);
   if (documentRef) {
+    renderImageQualityPanel(qualityResult, documentRef);
     renderCompliancePanel(snapshot.result, documentRef);
     renderCompositionGuides(snapshot, documentRef);
   }
   return snapshot.result;
 }
 
-/**
- * Dừng vòng theo dõi geometry của editor.
- */
 export function stopComplianceLiveUpdates() {
   if (complianceLiveTimerId && complianceLiveWindow) {
     complianceLiveWindow.clearInterval(complianceLiveTimerId);
@@ -208,16 +219,6 @@ export function stopComplianceLiveUpdates() {
   lastComplianceGeometrySignature = '';
 }
 
-/**
- * Theo dõi thay đổi hình học của editor và chỉ tính lại checker khi signature đổi.
- * Không chạy lại face detection hoặc background removal.
- *
- * @param {object} options
- * @param {number} [options.intervalMs=120]
- * @param {Window} [options.windowRef]
- * @param {Document} [options.documentRef]
- * @returns {function(): void}
- */
 export function startComplianceLiveUpdates({
   intervalMs = 120,
   windowRef = globalThis.window,
@@ -229,6 +230,7 @@ export function startComplianceLiveUpdates({
   }
 
   ensureCompliancePanel(documentRef);
+  ensureImageQualityPanel(documentRef);
   ensureCompositionGuides(documentRef);
   if (complianceLiveTimerId) return stopComplianceLiveUpdates;
 
@@ -247,6 +249,8 @@ export function startComplianceLiveUpdates({
     } catch {
       lastComplianceGeometrySignature = '';
       state.complianceResult = null;
+      state.imageQualityResult = null;
+      renderImageQualityPanel(null, documentRef);
       renderCompliancePanel(null, documentRef);
       renderCompositionGuides({}, documentRef);
     }
