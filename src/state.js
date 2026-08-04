@@ -59,6 +59,9 @@ export const state = {
   aiMaskImg: null,
   faceData:  null,
   complianceResult: null,
+  imageQualityMetrics: null,
+  imageQualityResult: null,
+  imageQualitySourceFile: null,
   bgColor:   { r: 255, g: 255, b: 255 },
   curFmt:    'passport-vn',
   aiReady:   false,
@@ -86,6 +89,9 @@ export function resetState() {
   state.aiMaskImg = null;
   state.faceData  = null;
   state.complianceResult = null;
+  state.imageQualityMetrics = null;
+  state.imageQualityResult = null;
+  state.imageQualitySourceFile = null;
   state.aiError   = '';
   state.bgColor   = { r: 255, g: 255, b: 255 };
   state.curFmt    = 'passport-vn';
