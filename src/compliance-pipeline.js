@@ -1,4 +1,12 @@
 import {
+  analyzeBackgroundQuality,
+  evaluateBackgroundQuality,
+} from './background-quality.js';
+import {
+  ensureBackgroundQualityPanel,
+  renderBackgroundQualityPanel,
+} from './background-quality-view.js';
+import {
   evaluatePhotoCompliance,
   getComplianceProfile,
   projectBoxToOutput,
@@ -26,6 +34,13 @@ import {
 let complianceLiveTimerId = 0;
 let complianceLiveWindow = null;
 let lastComplianceGeometrySignature = '';
+let lastObservedSourceFile = null;
+let lastObservedMaskImage = null;
+
+let backgroundQualityMetrics = null;
+let backgroundQualityResult = null;
+let backgroundQualitySourceImage = null;
+let backgroundQualitySourceMask = null;
 
 function finiteOrNull(value) {
   return Number.isFinite(value) ? value : null;
@@ -177,8 +192,13 @@ function buildCurrentImageQualityResult(documentRef = globalThis.document) {
 
   if (!state.imageQualityMetrics && documentRef) {
     const canvas = documentRef.getElementById('orig-canvas');
-    if (canvas && Number.isFinite(canvas.width) && Number.isFinite(canvas.height)
-      && canvas.width > 0 && canvas.height > 0) {
+    if (
+      canvas
+      && Number.isFinite(canvas.width)
+      && Number.isFinite(canvas.height)
+      && canvas.width > 0
+      && canvas.height > 0
+    ) {
       state.imageQualityMetrics = analyzeOriginalImageQuality(canvas, state.faceData);
     }
   }
@@ -191,8 +211,69 @@ function buildCurrentImageQualityResult(documentRef = globalThis.document) {
   return state.imageQualityResult;
 }
 
+function resetBackgroundQualityCache() {
+  backgroundQualityMetrics = null;
+  backgroundQualityResult = null;
+  backgroundQualitySourceImage = state.origImg;
+  backgroundQualitySourceMask = state.aiMaskImg;
+}
+
+function buildCurrentBackgroundQualityResult(documentRef = globalThis.document) {
+  if (!state.origImg || !state.origFile) {
+    backgroundQualityMetrics = null;
+    backgroundQualityResult = null;
+    backgroundQualitySourceImage = null;
+    backgroundQualitySourceMask = null;
+    return null;
+  }
+
+  if (
+    backgroundQualitySourceImage !== state.origImg
+    || backgroundQualitySourceMask !== state.aiMaskImg
+  ) {
+    resetBackgroundQualityCache();
+  }
+
+  if (!state.aiMaskImg) {
+    backgroundQualityResult = evaluateBackgroundQuality({
+      metrics: null,
+      hasAiMask: false,
+      aiError: state.aiError,
+    });
+    return backgroundQualityResult;
+  }
+
+  if (!backgroundQualityMetrics && documentRef) {
+    const canvas = documentRef.getElementById('orig-canvas');
+    if (
+      canvas
+      && Number.isFinite(canvas.width)
+      && Number.isFinite(canvas.height)
+      && canvas.width > 0
+      && canvas.height > 0
+    ) {
+      backgroundQualityMetrics = analyzeBackgroundQuality(
+        canvas,
+        state.aiMaskImg,
+        state.faceData,
+      );
+    }
+  }
+
+  backgroundQualityResult = evaluateBackgroundQuality({
+    metrics: backgroundQualityMetrics,
+    hasAiMask: Boolean(state.aiMaskImg),
+    aiError: state.aiError,
+  });
+  return backgroundQualityResult;
+}
+
 export function refreshImageQualityResult(documentRef = globalThis.document) {
   return buildCurrentImageQualityResult(documentRef);
+}
+
+export function refreshBackgroundQualityResult(documentRef = globalThis.document) {
+  return buildCurrentBackgroundQualityResult(documentRef);
 }
 
 export function refreshComplianceResult() {
@@ -202,8 +283,10 @@ export function refreshComplianceResult() {
 export function refreshComplianceView(documentRef = globalThis.document) {
   const snapshot = buildCurrentComplianceSnapshot();
   const qualityResult = buildCurrentImageQualityResult(documentRef);
+  const backgroundResult = buildCurrentBackgroundQualityResult(documentRef);
   if (documentRef) {
     renderImageQualityPanel(qualityResult, documentRef);
+    renderBackgroundQualityPanel(backgroundResult, documentRef);
     renderCompliancePanel(snapshot.result, documentRef);
     renderCompositionGuides(snapshot, documentRef);
   }
@@ -217,6 +300,8 @@ export function stopComplianceLiveUpdates() {
   complianceLiveTimerId = 0;
   complianceLiveWindow = null;
   lastComplianceGeometrySignature = '';
+  lastObservedSourceFile = null;
+  lastObservedMaskImage = null;
 }
 
 export function startComplianceLiveUpdates({
@@ -231,26 +316,39 @@ export function startComplianceLiveUpdates({
 
   ensureCompliancePanel(documentRef);
   ensureImageQualityPanel(documentRef);
+  ensureBackgroundQualityPanel(documentRef);
   ensureCompositionGuides(documentRef);
   if (complianceLiveTimerId) return stopComplianceLiveUpdates;
 
   const tick = () => {
     if (state.section !== 'editor') {
       lastComplianceGeometrySignature = '';
+      lastObservedSourceFile = null;
+      lastObservedMaskImage = null;
       return;
     }
 
     const signature = getComplianceGeometrySignature(state);
-    if (signature === lastComplianceGeometrySignature) return;
+    const sourceChanged = (
+      lastObservedSourceFile !== state.origFile
+      || lastObservedMaskImage !== state.aiMaskImg
+    );
+    if (signature === lastComplianceGeometrySignature && !sourceChanged) return;
 
     try {
       refreshComplianceView(documentRef);
       lastComplianceGeometrySignature = signature;
+      lastObservedSourceFile = state.origFile;
+      lastObservedMaskImage = state.aiMaskImg;
     } catch {
       lastComplianceGeometrySignature = '';
+      lastObservedSourceFile = null;
+      lastObservedMaskImage = null;
       state.complianceResult = null;
       state.imageQualityResult = null;
+      backgroundQualityResult = null;
       renderImageQualityPanel(null, documentRef);
+      renderBackgroundQualityPanel(null, documentRef);
       renderCompliancePanel(null, documentRef);
       renderCompositionGuides({}, documentRef);
     }
@@ -265,7 +363,10 @@ export function startComplianceLiveUpdates({
 function autoStartComplianceLiveUpdates() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
-  const start = () => startComplianceLiveUpdates({ windowRef: window, documentRef: document });
+  const start = () => startComplianceLiveUpdates({
+    windowRef: window,
+    documentRef: document,
+  });
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });
   } else {
