@@ -1,5 +1,4 @@
-import { clearExportRecovery } from './export-recovery.js';
-import { clearExportReceipt } from './export-receipt.js';
+import { clearExportSession } from './export-session.js';
 
 function normalizeFormatKey(formatKey) {
   return typeof formatKey === 'string' && formatKey ? formatKey : 'generic';
@@ -133,8 +132,7 @@ const baseManualReviewStore = createManualReviewStore();
 export const manualReviewStore = {
   ...baseManualReviewStore,
   reset(source = null) {
-    clearExportRecovery();
-    clearExportReceipt();
+    clearExportSession();
     return baseManualReviewStore.reset(source);
   },
 };
