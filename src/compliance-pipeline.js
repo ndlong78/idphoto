@@ -16,6 +16,11 @@ import {
   ensureCompositionGuides,
   renderCompositionGuides,
 } from './composition-guides.js';
+import { buildExportReadiness } from './export-readiness.js';
+import {
+  ensureExportReadinessPanel,
+  renderExportReadinessPanel,
+} from './export-readiness-view.js';
 import {
   analyzeOriginalImageQuality,
   evaluateImageQuality,
@@ -268,6 +273,24 @@ function buildCurrentBackgroundQualityResult(documentRef = globalThis.document) 
   return backgroundQualityResult;
 }
 
+function buildCurrentReadinessBundle(documentRef = globalThis.document) {
+  const snapshot = buildCurrentComplianceSnapshot();
+  const imageQualityResult = buildCurrentImageQualityResult(documentRef);
+  const currentBackgroundQualityResult = buildCurrentBackgroundQualityResult(documentRef);
+  const readiness = buildExportReadiness({
+    imageQualityResult,
+    backgroundQualityResult: currentBackgroundQualityResult,
+    complianceResult: snapshot.result,
+    profile: snapshot.profile,
+  });
+  return {
+    snapshot,
+    imageQualityResult,
+    backgroundQualityResult: currentBackgroundQualityResult,
+    readiness,
+  };
+}
+
 export function refreshImageQualityResult(documentRef = globalThis.document) {
   return buildCurrentImageQualityResult(documentRef);
 }
@@ -280,17 +303,22 @@ export function refreshComplianceResult() {
   return buildCurrentComplianceSnapshot().result;
 }
 
+export function refreshExportReadiness(documentRef = globalThis.document) {
+  const bundle = buildCurrentReadinessBundle(documentRef);
+  if (documentRef) renderExportReadinessPanel(bundle.readiness, documentRef);
+  return bundle.readiness;
+}
+
 export function refreshComplianceView(documentRef = globalThis.document) {
-  const snapshot = buildCurrentComplianceSnapshot();
-  const qualityResult = buildCurrentImageQualityResult(documentRef);
-  const backgroundResult = buildCurrentBackgroundQualityResult(documentRef);
+  const bundle = buildCurrentReadinessBundle(documentRef);
   if (documentRef) {
-    renderImageQualityPanel(qualityResult, documentRef);
-    renderBackgroundQualityPanel(backgroundResult, documentRef);
-    renderCompliancePanel(snapshot.result, documentRef);
-    renderCompositionGuides(snapshot, documentRef);
+    renderImageQualityPanel(bundle.imageQualityResult, documentRef);
+    renderBackgroundQualityPanel(bundle.backgroundQualityResult, documentRef);
+    renderCompliancePanel(bundle.snapshot.result, documentRef);
+    renderCompositionGuides(bundle.snapshot, documentRef);
+    renderExportReadinessPanel(bundle.readiness, documentRef);
   }
-  return snapshot.result;
+  return bundle.snapshot.result;
 }
 
 export function stopComplianceLiveUpdates() {
@@ -318,6 +346,7 @@ export function startComplianceLiveUpdates({
   ensureImageQualityPanel(documentRef);
   ensureBackgroundQualityPanel(documentRef);
   ensureCompositionGuides(documentRef);
+  ensureExportReadinessPanel(documentRef);
   if (complianceLiveTimerId) return stopComplianceLiveUpdates;
 
   const tick = () => {
@@ -351,6 +380,7 @@ export function startComplianceLiveUpdates({
       renderBackgroundQualityPanel(null, documentRef);
       renderCompliancePanel(null, documentRef);
       renderCompositionGuides({}, documentRef);
+      renderExportReadinessPanel(null, documentRef);
     }
   };
 
