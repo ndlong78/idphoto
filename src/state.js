@@ -1,3 +1,5 @@
+import { manualReviewStore } from './manual-review.js';
+
 const MILLIMETERS_PER_INCH = 25.4;
 
 /**
@@ -84,6 +86,10 @@ export const state = {
  * Lưu ý: state.aiReady không được reset (giữ nguyên model đã tải).
  */
 export function resetState() {
+  // Reset toàn bộ state gắn với ảnh nguồn trước khi trả UI về màn upload.
+  // manualReviewStore.reset() đồng thời dọn receipt, recovery và staged ZIP.
+  manualReviewStore.reset(null);
+
   state.origImg   = null;
   state.origFile  = null;
   state.aiMaskImg = null;
