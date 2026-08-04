@@ -4,6 +4,7 @@ import {
   clearStagedExportForBundle,
   stageExportForBundle,
 } from './export-delivery-session.js';
+import { clearExportRecovery } from './export-recovery.js';
 import { recordExportReceipt } from './export-receipt.js';
 import { canvasToDpiBlob } from './image-metadata.js';
 import { manualReviewStore } from './manual-review.js';
@@ -76,6 +77,8 @@ export async function createExportBlob(mode) {
 }
 
 export async function downloadWithDpi(mode) {
+  clearExportRecovery();
+  clearStagedExportForBundle();
   const { blob, filename, ...config } = await createExportBlob(mode);
   const exportResult = {
     filename,
@@ -92,7 +95,6 @@ export async function downloadWithDpi(mode) {
     return exportResult;
   }
 
-  clearStagedExportForBundle();
   downloadBlobFile(blob, filename);
   recordExportReceipt({
     delivery: 'image',

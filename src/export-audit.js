@@ -1,6 +1,11 @@
 import { downloadBlobFile } from './download.js';
 import { createExportBundle } from './export-bundle.js';
 import { consumeStagedExportForBundle } from './export-delivery-session.js';
+import {
+  clearExportRecovery,
+  recordRetryableExportFallback,
+  stageExportRecovery,
+} from './export-recovery.js';
 import { recordExportReceipt } from './export-receipt.js';
 
 function asIsoTimestamp(value) {
@@ -124,6 +129,38 @@ export function buildExportAuditFilename(imageFilename) {
   return `${base}.audit.json`;
 }
 
+function fallbackImageBlob(stagedExport) {
+  return new Blob(
+    [stagedExport.bytes],
+    { type: stagedExport.mimeType ?? 'application/octet-stream' },
+  );
+}
+
+function annotateFallbackError(error, stagedExport, recoveryAvailable) {
+  if (error && typeof error === 'object') {
+    error.imageFallbackDownloaded = true;
+    error.fallbackFilename = stagedExport.filename;
+    error.exportRecoveryAvailable = Boolean(recoveryAvailable);
+  }
+}
+
+function recordNonRetryableFallback(stagedExport, audit) {
+  return recordExportReceipt({
+    delivery: 'image-fallback',
+    status: 'fallback',
+    filename: stagedExport.filename,
+    sizeBytes: stagedExport.bytes.length,
+    mimeType: stagedExport.mimeType,
+    mode: audit?.export?.mode,
+    formatKey: audit?.profile?.formatKey,
+    widthPx: stagedExport.width,
+    heightPx: stagedExport.height,
+    dpi: stagedExport.targetDpi,
+    recoveryAvailable: false,
+    note: 'Ảnh đã tải thành công, nhưng cấu trúc gói ZIP không thể được tạo. Hãy thực hiện lượt xuất mới nếu cần audit.',
+  });
+}
+
 export function downloadExportAudit(
   audit,
   {
@@ -132,64 +169,70 @@ export function downloadExportAudit(
     windowRef = globalThis.window,
   } = {},
 ) {
+  clearExportRecovery();
   const content = serializeExportAudit(audit);
   const auditFilename = buildExportAuditFilename(audit?.export?.imageFilename);
   const stagedExport = consumeStagedExportForBundle();
   const downloadOptions = { documentRef, urlApi, windowRef };
 
   if (stagedExport) {
+    let bundle;
     try {
-      const bundle = createExportBundle({
+      bundle = createExportBundle({
         imageFilename: stagedExport.filename,
         imageBytes: stagedExport.bytes,
         auditFilename,
         auditContent: content,
       });
-      downloadBlobFile(bundle.blob, bundle.filename, downloadOptions);
-      recordExportReceipt({
-        delivery: 'bundle-zip',
-        filename: bundle.filename,
-        sizeBytes: bundle.sizeBytes,
-        mimeType: 'application/zip',
-        mode: audit?.export?.mode,
-        formatKey: audit?.profile?.formatKey,
-        widthPx: audit?.export?.widthPx,
-        heightPx: audit?.export?.heightPx,
-        dpi: audit?.export?.dpi,
-        entries: bundle.entries,
-        note: 'Gói ZIP chứa ảnh xuất và audit JSON.',
-      });
-      return {
-        filename: bundle.filename,
-        sizeBytes: bundle.sizeBytes,
-        bundled: true,
-        entries: bundle.entries,
-      };
     } catch (error) {
-      const fallbackBlob = new Blob(
-        [stagedExport.bytes],
-        { type: stagedExport.mimeType ?? 'application/octet-stream' },
-      );
+      const fallbackBlob = fallbackImageBlob(stagedExport);
       downloadBlobFile(fallbackBlob, stagedExport.filename, downloadOptions);
-      recordExportReceipt({
-        delivery: 'image-fallback',
-        status: 'fallback',
-        filename: stagedExport.filename,
-        sizeBytes: stagedExport.bytes.length,
-        mimeType: stagedExport.mimeType,
+      recordNonRetryableFallback(stagedExport, audit);
+      annotateFallbackError(error, stagedExport, false);
+      throw error;
+    }
+
+    try {
+      downloadBlobFile(bundle.blob, bundle.filename, downloadOptions);
+    } catch (error) {
+      stageExportRecovery({
+        imageFilename: stagedExport.filename,
+        imageBytes: stagedExport.bytes,
+        imageMimeType: stagedExport.mimeType,
+        auditFilename,
+        auditContent: content,
         mode: audit?.export?.mode,
         formatKey: audit?.profile?.formatKey,
         widthPx: stagedExport.width,
         heightPx: stagedExport.height,
         dpi: stagedExport.targetDpi,
-        note: 'Ảnh đã tải thành công, nhưng gói ZIP và audit JSON chưa được tạo.',
       });
-      if (error && typeof error === 'object') {
-        error.imageFallbackDownloaded = true;
-        error.fallbackFilename = stagedExport.filename;
-      }
+      const fallbackBlob = fallbackImageBlob(stagedExport);
+      downloadBlobFile(fallbackBlob, stagedExport.filename, downloadOptions);
+      recordRetryableExportFallback();
+      annotateFallbackError(error, stagedExport, true);
       throw error;
     }
+
+    recordExportReceipt({
+      delivery: 'bundle-zip',
+      filename: bundle.filename,
+      sizeBytes: bundle.sizeBytes,
+      mimeType: 'application/zip',
+      mode: audit?.export?.mode,
+      formatKey: audit?.profile?.formatKey,
+      widthPx: audit?.export?.widthPx,
+      heightPx: audit?.export?.heightPx,
+      dpi: audit?.export?.dpi,
+      entries: bundle.entries,
+      note: 'Gói ZIP chứa ảnh xuất và audit JSON.',
+    });
+    return {
+      filename: bundle.filename,
+      sizeBytes: bundle.sizeBytes,
+      bundled: true,
+      entries: bundle.entries,
+    };
   }
 
   const blob = new Blob([content], { type: 'application/json;charset=utf-8' });

@@ -1,3 +1,7 @@
+import {
+  downloadRecoveryImage,
+  retryExportBundle,
+} from './export-recovery.js';
 import { startExportReceiptView } from './export-receipt-view.js';
 
 function hasMountableDocument(doc) {
@@ -12,7 +16,16 @@ function hasMountableDocument(doc) {
 function start() {
   const documentRef = globalThis.document;
   if (!hasMountableDocument(documentRef)) return;
-  startExportReceiptView({ documentRef });
+  const downloadOptions = {
+    documentRef,
+    urlApi: globalThis.URL,
+    windowRef: globalThis.window,
+  };
+  startExportReceiptView({
+    documentRef,
+    onRetryBundle: () => retryExportBundle(downloadOptions),
+    onDownloadImage: () => downloadRecoveryImage(downloadOptions),
+  });
 }
 
 if (typeof document !== 'undefined') {

@@ -118,6 +118,57 @@
   line-height: 1.4;
 }
 
+.export-receipt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.export-receipt-actions[hidden] {
+  display: none;
+}
+
+.export-receipt-actions button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.38);
+  border-radius: 9px;
+  background: rgba(245, 158, 11, 0.12);
+  color: inherit;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.export-receipt-actions button:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.export-receipt-actions button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.export-receipt-actions button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.export-receipt-action-status {
+  display: block;
+  min-height: 1em;
+  margin-top: 7px;
+  color: var(--muted, #94a3b8);
+  font-size: 0.63rem;
+  line-height: 1.4;
+}
+
+.export-receipt-action-status:empty {
+  display: none;
+}
+
 @media (max-width: 520px) {
   .export-receipt-top {
     align-items: flex-start;
@@ -126,5 +177,14 @@
 
   .export-receipt-entries li {
     grid-template-columns: 1fr;
+  }
+
+  .export-receipt-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .export-receipt-actions button {
+    width: 100%;
   }
 }

@@ -49,6 +49,7 @@ export function buildExportReceipt({
   heightPx = null,
   dpi = null,
   entries = [],
+  recoveryAvailable = false,
   note = null,
 } = {}) {
   if (!DELIVERY_TYPES.has(delivery)) {
@@ -73,6 +74,7 @@ export function buildExportReceipt({
     heightPx: positiveIntegerOrNull(heightPx),
     dpi: positiveIntegerOrNull(dpi),
     entries: normalizeEntries(entries),
+    recoveryAvailable: Boolean(recoveryAvailable),
     note: typeof note === 'string' && note ? note : null,
     privacy: Object.freeze({
       containsImageData: false,

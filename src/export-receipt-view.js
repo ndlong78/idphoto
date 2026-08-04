@@ -7,6 +7,11 @@ const DELIVERY_LABELS = Object.freeze({
   'image-fallback': 'Ảnh fallback',
 });
 
+const RECOVERY_ACTIONS = Object.freeze([
+  Object.freeze({ id: 'retry-bundle', label: 'Thử lại ZIP' }),
+  Object.freeze({ id: 'download-image', label: 'Tải lại ảnh đơn' }),
+]);
+
 function appendText(doc, parent, tag, className, text) {
   const element = doc.createElement(tag);
   if (className) element.className = className;
@@ -36,6 +41,7 @@ export function buildExportReceiptViewModel(receipt, {
       filename: null,
       meta: [],
       entries: [],
+      actions: [],
       note: 'Sau khi tải, thông tin file gần nhất sẽ xuất hiện tại đây.',
     };
   }
@@ -66,6 +72,7 @@ export function buildExportReceiptViewModel(receipt, {
       name: entry.name,
       sizeLabel: formatByteSize(entry.sizeBytes),
     })),
+    actions: receipt.recoveryAvailable ? RECOVERY_ACTIONS : [],
     note: receipt.note ?? (
       receipt.delivery === 'bundle-zip'
         ? 'Gói ZIP chứa ảnh xuất và audit JSON.'
@@ -119,6 +126,17 @@ export function ensureExportReceiptPanel(doc = globalThis.document) {
   const note = appendText(doc, panel, 'small', 'export-receipt-note', 'Sau khi tải, thông tin file gần nhất sẽ xuất hiện tại đây.');
   note.id = 'export-receipt-note';
 
+  const actions = doc.createElement('div');
+  actions.id = 'export-receipt-actions';
+  actions.className = 'export-receipt-actions';
+  actions.hidden = true;
+  panel.appendChild(actions);
+
+  const actionStatus = appendText(doc, panel, 'small', 'export-receipt-action-status', '');
+  actionStatus.id = 'export-receipt-action-status';
+  actionStatus.setAttribute('role', 'status');
+  actionStatus.setAttribute('aria-live', 'polite');
+
   const manualPanel = downloadCard.querySelector('#manual-review-panel');
   const renote = downloadCard.querySelector('#renote');
   if (manualPanel?.nextSibling) downloadCard.insertBefore(panel, manualPanel.nextSibling);
@@ -130,9 +148,18 @@ function setText(element, value) {
   if (element && element.textContent !== value) element.textContent = value;
 }
 
+function setRecoveryBusy(panel, busy) {
+  panel.dataset.recoveryBusy = busy ? 'true' : 'false';
+  panel.setAttribute('aria-busy', busy ? 'true' : 'false');
+  for (const button of panel.querySelectorAll?.('button[data-recovery-action]') ?? []) {
+    button.disabled = busy;
+  }
+}
+
 export function renderExportReceipt(receipt, doc = globalThis.document) {
   const panel = ensureExportReceiptPanel(doc);
   if (!panel) return null;
+  const wasBusy = panel.dataset.recoveryBusy === 'true';
   const model = buildExportReceiptViewModel(receipt);
   panel.className = `export-receipt-panel is-${model.tone}`;
   setText(doc.getElementById('export-receipt-badge'), model.badge);
@@ -163,6 +190,60 @@ export function renderExportReceipt(receipt, doc = globalThis.document) {
   }
 
   setText(doc.getElementById('export-receipt-note'), model.note);
+
+  const actions = doc.getElementById('export-receipt-actions');
+  if (actions) {
+    actions.replaceChildren();
+    actions.hidden = model.actions.length === 0;
+    for (const action of model.actions) {
+      const button = appendText(doc, actions, 'button', '', action.label);
+      button.type = 'button';
+      button.dataset.recoveryAction = action.id;
+    }
+  }
+
+  if (!wasBusy) {
+    setText(doc.getElementById('export-receipt-action-status'), '');
+  }
+  setRecoveryBusy(panel, wasBusy);
+  return panel;
+}
+
+export function bindExportReceiptRecoveryActions({
+  documentRef = globalThis.document,
+  onRetryBundle = () => {},
+  onDownloadImage = () => {},
+} = {}) {
+  const panel = ensureExportReceiptPanel(documentRef);
+  if (!panel || panel.dataset.recoveryBound === 'true') return panel;
+  panel.dataset.recoveryBound = 'true';
+
+  panel.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('button[data-recovery-action]');
+    if (!button || panel.dataset.recoveryBusy === 'true') return;
+    const actionStatus = documentRef.getElementById('export-receipt-action-status');
+    const isRetry = button.dataset.recoveryAction === 'retry-bundle';
+    const action = isRetry ? onRetryBundle : onDownloadImage;
+    setRecoveryBusy(panel, true);
+    setText(actionStatus, isRetry ? 'Đang tạo lại gói ZIP…' : 'Đang tải lại ảnh đơn…');
+
+    try {
+      await action();
+      setText(
+        actionStatus,
+        isRetry ? 'Đã gửi lại gói ZIP tới trình duyệt.' : 'Đã gửi lại ảnh đơn tới trình duyệt.',
+      );
+    } catch {
+      setText(
+        actionStatus,
+        isRetry
+          ? 'Chưa tạo được ZIP. Dữ liệu vẫn được giữ để thử lại.'
+          : 'Chưa tải lại được ảnh đơn. Dữ liệu vẫn được giữ trong phiên.',
+      );
+    } finally {
+      setRecoveryBusy(panel, false);
+    }
+  });
   return panel;
 }
 
@@ -171,9 +252,16 @@ let stopSubscription = null;
 export function startExportReceiptView({
   documentRef = globalThis.document,
   store = exportReceiptStore,
+  onRetryBundle = () => {},
+  onDownloadImage = () => {},
 } = {}) {
   if (!documentRef) return () => {};
   ensureExportReceiptPanel(documentRef);
+  bindExportReceiptRecoveryActions({
+    documentRef,
+    onRetryBundle,
+    onDownloadImage,
+  });
   if (stopSubscription) stopSubscription();
   stopSubscription = store.subscribe((receipt) => renderExportReceipt(receipt, documentRef));
   return () => {
