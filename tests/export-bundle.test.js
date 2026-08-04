@@ -11,6 +11,7 @@ import {
   hasStagedExportForBundle,
   stageExportForBundle,
 } from '../src/export-delivery-session.js';
+import { downloadExportAudit } from '../src/export-audit.js';
 import { crc32, createStoredZipBytes } from '../src/zip.js';
 
 const decoder = new TextDecoder();
@@ -35,6 +36,42 @@ function parseLocalEntries(bytes) {
     offset = dataEnd;
   }
   return { entries, centralOffset: offset };
+}
+
+function createDownloadHarness() {
+  const blobs = [];
+  const clicks = [];
+  const documentRef = {
+    body: { appendChild() {} },
+    createElement() {
+      return {
+        download: '',
+        href: '',
+        hidden: false,
+        click() {
+          clicks.push({ filename: this.download, href: this.href });
+        },
+        remove() {},
+      };
+    },
+  };
+  const urlApi = {
+    createObjectURL(blob) {
+      blobs.push(blob);
+      return `blob:test-${blobs.length}`;
+    },
+    revokeObjectURL() {},
+  };
+  const windowRef = { setTimeout() { return 1; } };
+  return { blobs, clicks, documentRef, urlApi, windowRef };
+}
+
+function minimalAudit(imageFilename = 'photo.jpeg') {
+  return {
+    schemaVersion: 1,
+    kind: 'idphoto-export-audit',
+    export: { imageFilename },
+  };
 }
 
 test('crc32 khớp vector chuẩn', () => {
@@ -113,4 +150,56 @@ test('delivery session chỉ tiêu thụ staged export một lần', () => {
   assert.equal(consumeStagedExportForBundle(), staged);
   assert.equal(hasStagedExportForBundle(), false);
   assert.equal(consumeStagedExportForBundle(), null);
+});
+
+test('download audit dùng đúng một click để tải ZIP bundle', async () => {
+  clearStagedExportForBundle();
+  stageExportForBundle({
+    filename: 'photo.jpeg',
+    bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]),
+    mimeType: 'image/jpeg',
+  });
+  const harness = createDownloadHarness();
+  const result = downloadExportAudit(minimalAudit(), harness);
+
+  assert.equal(result.bundled, true);
+  assert.equal(result.filename, 'photo.bundle.zip');
+  assert.equal(harness.clicks.length, 1);
+  assert.equal(harness.clicks[0].filename, 'photo.bundle.zip');
+  assert.equal(harness.blobs[0].type, 'application/zip');
+  const parsed = parseLocalEntries(new Uint8Array(await harness.blobs[0].arrayBuffer()));
+  assert.deepEqual(parsed.entries.map((entry) => entry.name), [
+    'photo.jpeg',
+    'photo.audit.json',
+  ]);
+});
+
+test('bundle lỗi vẫn tải ảnh đơn làm fallback trước khi throw', () => {
+  clearStagedExportForBundle();
+  stageExportForBundle({
+    // Trùng với audit filename được tạo từ photo.jpeg để ép ZIP builder báo lỗi.
+    filename: 'photo.audit.json',
+    bytes: new Uint8Array([9, 8, 7]),
+    mimeType: 'image/jpeg',
+  });
+  const harness = createDownloadHarness();
+
+  assert.throws(
+    () => downloadExportAudit(minimalAudit('photo.jpeg'), harness),
+    /bị trùng/,
+  );
+  assert.equal(harness.clicks.length, 1);
+  assert.equal(harness.clicks[0].filename, 'photo.audit.json');
+  assert.equal(harness.blobs[0].type, 'image/jpeg');
+  assert.equal(hasStagedExportForBundle(), false);
+});
+
+test('không có staged image vẫn tải audit JSON độc lập để giữ tương thích API', () => {
+  clearStagedExportForBundle();
+  const harness = createDownloadHarness();
+  const result = downloadExportAudit(minimalAudit(), harness);
+  assert.equal(result.bundled, false);
+  assert.equal(result.filename, 'photo.audit.json');
+  assert.equal(harness.clicks.length, 1);
+  assert.equal(harness.blobs[0].type, 'application/json;charset=utf-8');
 });
