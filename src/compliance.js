@@ -1,3 +1,10 @@
+import {
+  COMPLIANCE_PROFILES,
+  GENERIC_PROFILE,
+} from './document-profiles.js';
+
+export { COMPLIANCE_PROFILES } from './document-profiles.js';
+
 export const COMPLIANCE_STATUS = Object.freeze({
   PASS: 'pass',
   WARNING: 'warning',
@@ -8,58 +15,6 @@ export const COMPLIANCE_STATUS = Object.freeze({
 export const AUTOMATED_REVIEW_STATUS = Object.freeze({
   NO_WARNING: 'no-automatic-warning',
   REVIEW: 'review-needed',
-});
-
-const GENERIC_PROFILE = Object.freeze({
-  key: 'generic',
-  sourceUrl: null,
-  horizontalCenterTolerance: 0.08,
-  faceAreaRange: null,
-  headHeightRange: null,
-  eyeLineFromTopRange: null,
-  manualChecks: Object.freeze([
-    Object.freeze({ id: 'pose', label: 'Tư thế và biểu cảm', message: 'Kiểm tra người chụp nhìn thẳng, biểu cảm phù hợp và mắt nhìn rõ.' }),
-    Object.freeze({ id: 'background', label: 'Phông nền', message: 'Kiểm tra màu nền, bóng đổ và vật thể phía sau theo yêu cầu hồ sơ.' }),
-    Object.freeze({ id: 'appearance', label: 'Phụ kiện che mặt', message: 'Kiểm tra kính, tóc, mũ hoặc vật dụng không che các đặc điểm nhận dạng.' }),
-  ]),
-});
-
-export const COMPLIANCE_PROFILES = Object.freeze({
-  'passport-vn': Object.freeze({
-    key: 'passport-vn',
-    sourceUrl: 'https://dichvucong.bocongan.gov.vn/bocongan/tintuc/chitiet?matin=141',
-    horizontalCenterTolerance: 0.08,
-    // Nguồn chính thức nêu khuôn mặt chiếm khoảng 75% diện tích ảnh.
-    // Dải ±10 điểm phần trăm là tolerance cảnh báo của ứng dụng, không phải
-    // ngưỡng chấp nhận chính thức của cơ quan tiếp nhận.
-    faceAreaRange: Object.freeze({ min: 0.65, max: 0.85, target: 0.75, approximate: true }),
-    headHeightRange: null,
-    // Từ yêu cầu: khoảng cách mắt→mép trên ≈ 2/3 khoảng cách mắt→mép dưới.
-    // Suy ra eye line mục tiêu ≈ 40% chiều cao tính từ mép trên.
-    eyeLineFromTopRange: Object.freeze({ min: 0.35, max: 0.45, target: 0.40, approximate: true }),
-    manualChecks: Object.freeze([
-      Object.freeze({ id: 'recent', label: 'Ảnh mới chụp', message: 'Ảnh cần được chụp trong vòng 6 tháng.' }),
-      Object.freeze({ id: 'pose', label: 'Mặt nhìn thẳng', message: 'Kiểm tra mặt nhìn thẳng, lộ hai vành tai và đầu để trần.' }),
-      Object.freeze({ id: 'glasses', label: 'Không đeo kính', message: 'Kiểm tra người chụp không đeo kính.' }),
-      Object.freeze({ id: 'background', label: 'Phông nền trắng', message: 'Kiểm tra nền trắng, đồng đều và không có bóng hoặc vật thể.' }),
-    ]),
-  }),
-  'us-visa': Object.freeze({
-    key: 'us-visa',
-    sourceUrl: 'https://travel.state.gov/content/travel/en/us-visas/visa-information-resources/photos/photo-composition-template.html',
-    horizontalCenterTolerance: 0.08,
-    faceAreaRange: null,
-    headHeightRange: Object.freeze({ min: 0.50, max: 0.69, approximate: false }),
-    // Nguồn quy định mắt cách đáy 56–69% chiều cao ảnh, tương đương
-    // 31–44% tính từ mép trên.
-    eyeLineFromTopRange: Object.freeze({ min: 0.31, max: 0.44, approximate: false }),
-    manualChecks: Object.freeze([
-      Object.freeze({ id: 'recent', label: 'Ảnh mới chụp', message: 'Ảnh cần được chụp trong vòng 6 tháng.' }),
-      Object.freeze({ id: 'pose', label: 'Tư thế và biểu cảm', message: 'Kiểm tra mặt nhìn thẳng, biểu cảm trung tính và hai mắt mở.' }),
-      Object.freeze({ id: 'glasses', label: 'Không đeo kính', message: 'Ảnh visa Mỹ thông thường không được đeo kính.' }),
-      Object.freeze({ id: 'background', label: 'Nền trắng hoặc trắng ngà', message: 'Kiểm tra nền trơn, trắng hoặc trắng ngà, không có bóng.' }),
-    ]),
-  }),
 });
 
 function assertFiniteNumber(value, name) {
@@ -114,7 +69,7 @@ function makeRangeCheck({ id, label, value, range, passMessage, warningMessage }
       id,
       label,
       status: COMPLIANCE_STATUS.UNAVAILABLE,
-      message: 'Preset hiện tại chưa có quy tắc tự động cho tiêu chí này.',
+      message: 'Nguồn của preset hiện tại không cung cấp quy tắc số để đánh giá tự động tiêu chí này.',
       value: null,
     };
   }
@@ -309,9 +264,12 @@ export function evaluatePhotoCompliance({
   }
 
   const hasWarnings = checks.some((check) => check.status === COMPLIANCE_STATUS.WARNING);
+  const scopePrefix = profile.scopeNotice ? `${profile.scopeNotice} ` : '';
   return {
     formatKey,
     profileKey: profile.key,
+    profileSupportLevel: profile.supportLevel,
+    scopeNotice: profile.scopeNotice,
     sourceUrl: profile.sourceUrl,
     automatedStatus: hasWarnings
       ? AUTOMATED_REVIEW_STATUS.REVIEW
@@ -325,6 +283,6 @@ export function evaluatePhotoCompliance({
       horizontalCenterDeviation,
       faceClipped,
     },
-    disclaimer: 'Kết quả chỉ là cảnh báo hỗ trợ căn chỉnh, không phải xác nhận ảnh được cơ quan tiếp nhận chấp thuận.',
+    disclaimer: `${scopePrefix}Kết quả chỉ là cảnh báo hỗ trợ căn chỉnh, không phải xác nhận ảnh được cơ quan tiếp nhận chấp thuận.`,
   };
 }
