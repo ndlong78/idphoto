@@ -1,3 +1,7 @@
+import { downloadBlobFile } from './download.js';
+import { createExportBundle } from './export-bundle.js';
+import { consumeStagedExportForBundle } from './export-delivery-session.js';
+
 function asIsoTimestamp(value) {
   const date = value instanceof Date ? value : new Date(value ?? Date.now());
   if (Number.isNaN(date.getTime())) throw new RangeError('generatedAt không hợp lệ.');
@@ -62,6 +66,7 @@ export function buildExportAudit({
     },
     export: {
       mode: mode ?? null,
+      delivery: 'bundle-zip',
       imageFilename: exportResult.filename,
       mimeType: exportResult.mimeType ?? null,
       widthPx: exportResult.width ?? null,
@@ -126,20 +131,37 @@ export function downloadExportAudit(
     windowRef = globalThis.window,
   } = {},
 ) {
-  if (!documentRef || !urlApi?.createObjectURL) {
-    throw new Error('Trình duyệt không hỗ trợ tải audit.');
-  }
   const content = serializeExportAudit(audit);
+  const auditFilename = buildExportAuditFilename(audit?.export?.imageFilename);
+  const stagedExport = consumeStagedExportForBundle();
+  const downloadOptions = { documentRef, urlApi, windowRef };
+
+  if (stagedExport) {
+    try {
+      const bundle = createExportBundle({
+        imageFilename: stagedExport.filename,
+        imageBytes: stagedExport.bytes,
+        auditFilename,
+        auditContent: content,
+      });
+      downloadBlobFile(bundle.blob, bundle.filename, downloadOptions);
+      return {
+        filename: bundle.filename,
+        sizeBytes: bundle.sizeBytes,
+        bundled: true,
+        entries: bundle.entries,
+      };
+    } catch (error) {
+      const fallbackBlob = new Blob(
+        [stagedExport.bytes],
+        { type: stagedExport.mimeType ?? 'application/octet-stream' },
+      );
+      downloadBlobFile(fallbackBlob, stagedExport.filename, downloadOptions);
+      throw error;
+    }
+  }
+
   const blob = new Blob([content], { type: 'application/json;charset=utf-8' });
-  const filename = buildExportAuditFilename(audit?.export?.imageFilename);
-  const objectUrl = urlApi.createObjectURL(blob);
-  const link = documentRef.createElement('a');
-  link.download = filename;
-  link.href = objectUrl;
-  link.hidden = true;
-  documentRef.body?.appendChild(link);
-  link.click();
-  link.remove();
-  windowRef?.setTimeout?.(() => urlApi.revokeObjectURL(objectUrl), 30_000);
-  return { filename, sizeBytes: blob.size };
+  downloadBlobFile(blob, auditFilename, downloadOptions);
+  return { filename: auditFilename, sizeBytes: blob.size, bundled: false };
 }

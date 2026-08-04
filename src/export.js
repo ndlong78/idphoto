@@ -1,4 +1,10 @@
+import { downloadBlobFile } from './download.js';
+import {
+  clearStagedExportForBundle,
+  stageExportForBundle,
+} from './export-delivery-session.js';
 import { canvasToDpiBlob } from './image-metadata.js';
+import { manualReviewStore } from './manual-review.js';
 import { renderResult } from './render.js';
 import { FMTS, mmToPixels, state } from './state.js';
 
@@ -69,20 +75,22 @@ export async function createExportBlob(mode) {
 
 export async function downloadWithDpi(mode) {
   const { blob, filename, ...config } = await createExportBlob(mode);
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.download = filename;
-  link.href = objectUrl;
-  link.hidden = true;
-  document.body?.appendChild(link);
-  link.click();
-  link.remove();
-
-  // Giữ URL thêm một nhịp để Safari/Firefox hoàn tất việc nhận blob download.
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-  return {
+  const exportResult = {
     filename,
     ...config,
     blobSize: blob.size,
   };
+
+  if (manualReviewStore.isAuditEnabled(state.origFile)) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    stageExportForBundle({
+      ...exportResult,
+      bytes,
+    });
+    return exportResult;
+  }
+
+  clearStagedExportForBundle();
+  downloadBlobFile(blob, filename);
+  return exportResult;
 }
