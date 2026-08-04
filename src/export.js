@@ -1,4 +1,9 @@
+import {
+  clearStagedExportForBundle,
+  stageExportForBundle,
+} from './export-delivery-session.js';
 import { canvasToDpiBlob } from './image-metadata.js';
+import { manualReviewStore } from './manual-review.js';
 import { renderResult } from './render.js';
 import { FMTS, mmToPixels, state } from './state.js';
 
@@ -67,22 +72,51 @@ export async function createExportBlob(mode) {
   return { blob, filename, ...config };
 }
 
-export async function downloadWithDpi(mode) {
-  const { blob, filename, ...config } = await createExportBlob(mode);
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement('a');
+export function downloadBlobFile(
+  blob,
+  filename,
+  {
+    documentRef = globalThis.document,
+    urlApi = globalThis.URL,
+    windowRef = globalThis.window,
+  } = {},
+) {
+  if (!(blob instanceof Blob)) throw new TypeError('Download blob không hợp lệ.');
+  if (typeof filename !== 'string' || !filename) throw new TypeError('Download filename là bắt buộc.');
+  if (!documentRef || !urlApi?.createObjectURL) {
+    throw new Error('Trình duyệt không hỗ trợ tải file.');
+  }
+
+  const objectUrl = urlApi.createObjectURL(blob);
+  const link = documentRef.createElement('a');
   link.download = filename;
   link.href = objectUrl;
   link.hidden = true;
-  document.body?.appendChild(link);
+  documentRef.body?.appendChild(link);
   link.click();
   link.remove();
+  windowRef?.setTimeout?.(() => urlApi.revokeObjectURL(objectUrl), 30_000);
+  return { filename, sizeBytes: blob.size };
+}
 
-  // Giữ URL thêm một nhịp để Safari/Firefox hoàn tất việc nhận blob download.
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-  return {
+export async function downloadWithDpi(mode) {
+  const { blob, filename, ...config } = await createExportBlob(mode);
+  const exportResult = {
     filename,
     ...config,
     blobSize: blob.size,
   };
+
+  if (manualReviewStore.isAuditEnabled(state.origFile)) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    stageExportForBundle({
+      ...exportResult,
+      bytes,
+    });
+    return exportResult;
+  }
+
+  clearStagedExportForBundle();
+  downloadBlobFile(blob, filename);
+  return exportResult;
 }
