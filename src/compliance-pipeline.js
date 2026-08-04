@@ -29,6 +29,11 @@ import {
   ensureImageQualityPanel,
   renderImageQualityPanel,
 } from './image-quality-view.js';
+import { manualReviewStore } from './manual-review.js';
+import {
+  ensureManualReviewPanel,
+  renderManualReviewPanel,
+} from './manual-review-view.js';
 import { FMTS, state } from './state.js';
 import {
   ensureCompliancePanel,
@@ -277,17 +282,20 @@ function buildCurrentReadinessBundle(documentRef = globalThis.document) {
   const snapshot = buildCurrentComplianceSnapshot();
   const imageQualityResult = buildCurrentImageQualityResult(documentRef);
   const currentBackgroundQualityResult = buildCurrentBackgroundQualityResult(documentRef);
+  const completedKeys = manualReviewStore.getCompletedKeys(state.origFile, state.curFmt);
   const readiness = buildExportReadiness({
     imageQualityResult,
     backgroundQualityResult: currentBackgroundQualityResult,
     complianceResult: snapshot.result,
     profile: snapshot.profile,
+    manualReviewCompletedKeys: completedKeys,
   });
   return {
     snapshot,
     imageQualityResult,
     backgroundQualityResult: currentBackgroundQualityResult,
     readiness,
+    auditEnabled: manualReviewStore.isAuditEnabled(state.origFile),
   };
 }
 
@@ -305,7 +313,10 @@ export function refreshComplianceResult() {
 
 export function refreshExportReadiness(documentRef = globalThis.document) {
   const bundle = buildCurrentReadinessBundle(documentRef);
-  if (documentRef) renderExportReadinessPanel(bundle.readiness, documentRef);
+  if (documentRef) {
+    renderExportReadinessPanel(bundle.readiness, documentRef);
+    renderManualReviewPanel(bundle.readiness, { auditEnabled: bundle.auditEnabled }, documentRef);
+  }
   return bundle.readiness;
 }
 
@@ -317,6 +328,7 @@ export function refreshComplianceView(documentRef = globalThis.document) {
     renderCompliancePanel(bundle.snapshot.result, documentRef);
     renderCompositionGuides(bundle.snapshot, documentRef);
     renderExportReadinessPanel(bundle.readiness, documentRef);
+    renderManualReviewPanel(bundle.readiness, { auditEnabled: bundle.auditEnabled }, documentRef);
   }
   return bundle.snapshot.result;
 }
@@ -347,6 +359,7 @@ export function startComplianceLiveUpdates({
   ensureBackgroundQualityPanel(documentRef);
   ensureCompositionGuides(documentRef);
   ensureExportReadinessPanel(documentRef);
+  ensureManualReviewPanel(documentRef);
   if (complianceLiveTimerId) return stopComplianceLiveUpdates;
 
   const tick = () => {
@@ -381,6 +394,7 @@ export function startComplianceLiveUpdates({
       renderCompliancePanel(null, documentRef);
       renderCompositionGuides({}, documentRef);
       renderExportReadinessPanel(null, documentRef);
+      renderManualReviewPanel(null, { auditEnabled: false }, documentRef);
     }
   };
 
