@@ -100,9 +100,12 @@ npm run test:e2e
 # Hoặc chạy riêng từng project
 npm run test:e2e:desktop
 npm run test:e2e:mobile
+
+# Chỉ chạy hành trình upload → editor → xác nhận → export
+npm run test:e2e:journey
 ```
 
-Bộ E2E dùng `scripts/static-server.mjs`, không gọi AI/CDN và kiểm tra download event thật, nội dung ZIP, receipt cùng recovery controls. Report local nằm trong `playwright-report/`; trace, screenshot và video chỉ được giữ khi test thất bại.
+Bộ E2E dùng `scripts/static-server.mjs`, không gọi AI/CDN và kiểm tra download event thật, nội dung ZIP, receipt cùng recovery controls. Hành trình đầy đủ tạo PNG fixture ngay trong Chromium, đưa file qua input upload thật, chạy `FileReader`, canvas editor, compliance/readiness, dialog xác nhận, renderer, metadata DPI và delivery layer trước khi đọc lại file tải xuống. Report local nằm trong `playwright-report/`; trace, screenshot và video chỉ được giữ khi test thất bại.
 
 ## Yêu cầu mạng
 
