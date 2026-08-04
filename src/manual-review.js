@@ -1,3 +1,5 @@
+import { clearExportReceipt } from './export-receipt.js';
+
 function normalizeFormatKey(formatKey) {
   return typeof formatKey === 'string' && formatKey ? formatKey : 'generic';
 }
@@ -125,4 +127,12 @@ export function createManualReviewStore() {
   };
 }
 
-export const manualReviewStore = createManualReviewStore();
+const baseManualReviewStore = createManualReviewStore();
+
+export const manualReviewStore = {
+  ...baseManualReviewStore,
+  reset(source = null) {
+    clearExportReceipt();
+    return baseManualReviewStore.reset(source);
+  },
+};
