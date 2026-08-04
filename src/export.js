@@ -68,7 +68,7 @@ export async function createExportBlob(mode) {
 }
 
 export async function downloadWithDpi(mode) {
-  const { blob, filename } = await createExportBlob(mode);
+  const { blob, filename, ...config } = await createExportBlob(mode);
   const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.download = filename;
@@ -80,4 +80,9 @@ export async function downloadWithDpi(mode) {
 
   // Giữ URL thêm một nhịp để Safari/Firefox hoàn tất việc nhận blob download.
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+  return {
+    filename,
+    ...config,
+    blobSize: blob.size,
+  };
 }
