@@ -31,7 +31,7 @@ export function ensureManualReviewPanel(doc = globalThis.document) {
 
   const top = doc.createElement('div');
   top.className = 'manual-review-top';
-  const heading = appendText(doc, top, 'strong', '', 'Checklist & audit');
+  const heading = appendText(doc, top, 'strong', '', 'Checklist & gói xuất');
   heading.id = 'manual-review-title';
   const status = appendText(doc, top, 'span', 'manual-review-status', '0/0 đã đối chiếu');
   status.id = 'manual-review-status';
@@ -71,13 +71,13 @@ export function ensureManualReviewPanel(doc = globalThis.document) {
   auditInput.dataset.action = 'audit-toggle';
   auditLabel.appendChild(auditInput);
   const auditText = doc.createElement('span');
-  appendText(doc, auditText, 'strong', '', 'Tải kèm bản kiểm tra JSON');
+  appendText(doc, auditText, 'strong', '', 'Tải gói ZIP gồm ảnh + audit JSON');
   appendText(
     doc,
     auditText,
     'small',
     '',
-    'Không chứa ảnh, tọa độ khuôn mặt hoặc tên file gốc. Trình duyệt có thể hỏi quyền tải nhiều file.',
+    'Tải một file ZIP duy nhất. Audit không chứa ảnh, tọa độ khuôn mặt hoặc tên file gốc.',
   );
   auditLabel.appendChild(auditText);
   panel.appendChild(auditLabel);
