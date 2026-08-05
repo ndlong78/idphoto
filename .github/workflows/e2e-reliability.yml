@@ -25,6 +25,7 @@ concurrency:
 env:
   NODE_VERSION: '24'
   PLAYWRIGHT_VERSION: '1.61.1'
+  PLAYWRIGHT_DURATION_BUDGETS: config/playwright-duration-budgets.json
   REPEAT_EACH: ${{ github.event_name == 'workflow_dispatch' && inputs.repeat_each || '5' }}
   EXPECTED_PROJECTS: chromium-desktop,cross-firefox,cross-webkit,webkit-iphone-13
   RELIABILITY_HISTORY_MAX_ENTRIES: '30'
@@ -163,6 +164,7 @@ jobs:
           playwright-reliability-summary.md
           playwright-reliability-summary.compact.json
           --expected-projects="$EXPECTED_PROJECTS"
+          --duration-budgets="$PLAYWRIGHT_DURATION_BUDGETS"
           --max-failed=0
           --max-flaky=0
           --require-complete
