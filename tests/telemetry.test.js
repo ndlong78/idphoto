@@ -3,6 +3,25 @@ import assert from 'node:assert/strict';
 
 import { clearTelemetryEvents, logEvent, serializeErrorForTelemetry } from '../src/telemetry.js';
 
+function installNavigatorStub(value = {}) {
+  const previousDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    enumerable: previousDescriptor?.enumerable ?? true,
+    writable: true,
+    value,
+  });
+
+  return () => {
+    if (previousDescriptor) {
+      Object.defineProperty(globalThis, 'navigator', previousDescriptor);
+    } else {
+      delete globalThis.navigator;
+    }
+  };
+}
+
 test('telemetry: mặc định chỉ log console với level error', () => {
   clearTelemetryEvents();
 
@@ -89,14 +108,13 @@ test('telemetry: serializeErrorForTelemetry xử lý non-error value', () => {
 
 test('telemetry: chặn endpoint http không an toàn', () => {
   const prevFetch = globalThis.fetch;
-  const prevNavigator = globalThis.navigator;
+  const restoreNavigator = installNavigatorStub();
   let called = 0;
 
   globalThis.fetch = () => {
     called += 1;
     return Promise.resolve({ ok: true });
   };
-  globalThis.navigator = {};
   globalThis.__IDPHOTO_CONFIG__ = { telemetryEndpoint: 'http://evil.example.com/events' };
 
   try {
@@ -104,21 +122,20 @@ test('telemetry: chặn endpoint http không an toàn', () => {
     assert.equal(called, 0);
   } finally {
     globalThis.fetch = prevFetch;
-    globalThis.navigator = prevNavigator;
+    restoreNavigator();
     delete globalThis.__IDPHOTO_CONFIG__;
   }
 });
 
 test('telemetry: cho phép endpoint localhost qua http', () => {
   const prevFetch = globalThis.fetch;
-  const prevNavigator = globalThis.navigator;
+  const restoreNavigator = installNavigatorStub();
   let called = 0;
 
   globalThis.fetch = () => {
     called += 1;
     return Promise.resolve({ ok: true });
   };
-  globalThis.navigator = {};
   globalThis.__IDPHOTO_CONFIG__ = { telemetryEndpoint: 'http://localhost:4318/events' };
 
   try {
@@ -126,7 +143,7 @@ test('telemetry: cho phép endpoint localhost qua http', () => {
     assert.equal(called, 1);
   } finally {
     globalThis.fetch = prevFetch;
-    globalThis.navigator = prevNavigator;
+    restoreNavigator();
     delete globalThis.__IDPHOTO_CONFIG__;
   }
 });
