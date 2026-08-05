@@ -43,5 +43,26 @@ export default defineConfig({
         ...devices['Pixel 7'],
       },
     },
+    {
+      name: 'cross-chromium',
+      testMatch: /.*\.cross\.spec\.js/,
+      use: {
+        ...devices['Desktop Chrome'],
+      },
+    },
+    {
+      name: 'cross-firefox',
+      testMatch: /.*\.cross\.spec\.js/,
+      use: {
+        ...devices['Desktop Firefox'],
+      },
+    },
+    {
+      name: 'cross-webkit',
+      testMatch: /.*\.cross\.spec\.js/,
+      use: {
+        ...devices['Desktop Safari'],
+      },
+    },
   ],
 });
