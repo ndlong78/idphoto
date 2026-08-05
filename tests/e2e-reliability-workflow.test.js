@@ -52,3 +52,30 @@ test('Playwright retains retry evidence without increasing per-shard workers', (
   assert.match(playwrightConfig, /video: retainedEvidenceMode/);
   assert.match(playwrightConfig, /screenshot: 'only-on-failure'/);
 });
+
+test('observability job runs after failures with narrowly scoped write permissions', () => {
+  assert.match(reliabilityWorkflow, /reliability-observability:\n\s+name: Reliability \/ Trend and incident/);
+  assert.match(reliabilityWorkflow, /if: \$\{\{ always\(\) && !cancelled\(\) \}\}/);
+  assert.match(reliabilityWorkflow, /needs: merge-reliability-reports/);
+  assert.match(reliabilityWorkflow, /permissions:\n\s+actions: read\n\s+contents: read\n\s+issues: write/);
+  assert.match(reliabilityWorkflow, /RELIABILITY_JOB_RESULT: \$\{\{ needs\.merge-reliability-reports\.result \}\}/);
+});
+
+test('scheduled history is persistent while manual runs remain isolated previews', () => {
+  assert.match(reliabilityWorkflow, /RELIABILITY_HISTORY_MAX_ENTRIES: '30'/);
+  assert.match(reliabilityWorkflow, /RELIABILITY_TREND_WINDOW: '14'/);
+  assert.match(reliabilityWorkflow, /artifact\.name === 'playwright-reliability-history'/);
+  assert.match(reliabilityWorkflow, /event: 'schedule'/);
+  assert.match(reliabilityWorkflow, /playwright-reliability-history' \|\| 'playwright-reliability-history-manual'/);
+  assert.match(reliabilityWorkflow, /retention-days: 90/);
+  assert.match(reliabilityWorkflow, /github-token: \$\{\{ github\.token \}\}/);
+  assert.match(reliabilityWorkflow, /run-id: \$\{\{ steps\.previous_history\.outputs\.result \}\}/);
+});
+
+test('incident automation uses Node 24 github-script and only runs for schedules', () => {
+  assert.equal((reliabilityWorkflow.match(/actions\/github-script@v9/g) ?? []).length, 2);
+  assert.match(reliabilityWorkflow, /Manage scheduled reliability incident issue\n\s+if: \$\{\{ github\.event_name == 'schedule' \}\}/);
+  assert.match(reliabilityWorkflow, /Automated nightly browser reliability incident/);
+  assert.match(reliabilityWorkflow, /state_reason: 'completed'/);
+  assert.match(reliabilityWorkflow, /plan\.runMarker/);
+});

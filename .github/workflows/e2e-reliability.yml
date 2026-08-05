@@ -27,6 +27,8 @@ env:
   PLAYWRIGHT_VERSION: '1.61.1'
   REPEAT_EACH: ${{ github.event_name == 'workflow_dispatch' && inputs.repeat_each || '5' }}
   EXPECTED_PROJECTS: chromium-desktop,cross-firefox,cross-webkit,webkit-iphone-13
+  RELIABILITY_HISTORY_MAX_ENTRIES: '30'
+  RELIABILITY_TREND_WINDOW: '14'
 
 jobs:
   reliability-e2e:
@@ -179,3 +181,208 @@ jobs:
             playwright-reliability-summary.compact.json
           if-no-files-found: warn
           retention-days: 14
+
+  reliability-observability:
+    name: Reliability / Trend and incident
+    if: ${{ always() && !cancelled() }}
+    needs: merge-reliability-reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download current unified reliability summary
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: playwright-reliability-report-unified
+          path: current-reliability-report
+
+      - name: Find previous scheduled history artifact
+        if: ${{ github.event_name == 'schedule' }}
+        id: previous_history
+        uses: actions/github-script@v9
+        with:
+          retries: 3
+          result-encoding: string
+          script: |
+            const currentRunId = Number(process.env.GITHUB_RUN_ID);
+            const branch = process.env.GITHUB_REF_NAME;
+            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'e2e-reliability.yml',
+              branch,
+              event: 'schedule',
+              status: 'completed',
+              per_page: 100,
+            });
+
+            for (const run of runs) {
+              if (run.id === currentRunId) continue;
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              const history = artifacts.find((artifact) => (
+                artifact.name === 'playwright-reliability-history'
+                && !artifact.expired
+              ));
+              if (history) return String(run.id);
+            }
+            return '';
+
+      - name: Download previous scheduled history
+        if: ${{ steps.previous_history.outputs.result != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: playwright-reliability-history
+          path: previous-reliability-history
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.previous_history.outputs.result }}
+
+      - name: Build reliability trend and incident plan
+        env:
+          RELIABILITY_JOB_RESULT: ${{ needs.merge-reliability-reports.result }}
+        run: >-
+          node scripts/reliability-history.mjs
+          current-reliability-report/playwright-reliability-summary.compact.json
+          previous-reliability-history/reliability-history.json
+          reliability-observability/reliability-history.json
+          reliability-observability/reliability-trend.md
+          reliability-observability/reliability-incident-body.md
+          reliability-observability/reliability-incident-plan.json
+          --max-entries="$RELIABILITY_HISTORY_MAX_ENTRIES"
+          --window-size="$RELIABILITY_TREND_WINDOW"
+
+      - name: Upload reliability history
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.event_name == 'schedule' && 'playwright-reliability-history' || 'playwright-reliability-history-manual' }}
+          path: reliability-observability/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Manage scheduled reliability incident issue
+        if: ${{ github.event_name == 'schedule' }}
+        uses: actions/github-script@v9
+        env:
+          INCIDENT_PLAN_PATH: reliability-observability/reliability-incident-plan.json
+          INCIDENT_BODY_PATH: reliability-observability/reliability-incident-body.md
+        with:
+          retries: 3
+          script: |
+            const fs = require('node:fs');
+            const plan = JSON.parse(fs.readFileSync(process.env.INCIDENT_PLAN_PATH, 'utf8'));
+            const body = fs.readFileSync(process.env.INCIDENT_BODY_PATH, 'utf8');
+            if (!plan.manageIncident || plan.action === 'none') return;
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: plan.label });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: plan.label,
+                color: 'd73a4a',
+                description: 'Automated nightly browser reliability incident',
+              });
+            }
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'all',
+              labels: plan.label,
+              per_page: 100,
+            });
+            const incident = issues.find((issue) => (
+              !issue.pull_request
+              && issue.title === plan.title
+              && String(issue.body || '').includes(plan.marker)
+            ));
+
+            const hasRunMarker = async (issue) => {
+              if (String(issue.body || '').includes(plan.runMarker)) return true;
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number: issue.number,
+                per_page: 100,
+              });
+              return comments.some((comment) => String(comment.body || '').includes(plan.runMarker));
+            };
+
+            if (plan.action === 'open-or-update') {
+              if (!incident) {
+                await github.rest.issues.create({
+                  owner,
+                  repo,
+                  title: plan.title,
+                  body,
+                  labels: [plan.label],
+                });
+                return;
+              }
+
+              const alreadyRecorded = await hasRunMarker(incident);
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: incident.number,
+                state: 'open',
+                title: plan.title,
+                body,
+                labels: [plan.label],
+              });
+              if (!alreadyRecorded) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: incident.number,
+                  body: plan.comment,
+                });
+              }
+              return;
+            }
+
+            if (plan.action === 'resolve' && incident?.state === 'open') {
+              const alreadyRecorded = await hasRunMarker(incident);
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: incident.number,
+                body,
+                labels: [plan.label],
+              });
+              if (!alreadyRecorded) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: incident.number,
+                  body: plan.comment,
+                });
+              }
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: incident.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+            }

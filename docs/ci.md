@@ -10,8 +10,17 @@ The workflows use the Node 24 generations of the official GitHub actions:
 - `actions/setup-node@v6`
 - `actions/upload-artifact@v7`
 - `actions/download-artifact@v8`
+- `actions/github-script@v9`
 
-Workflow permissions are read-only (`contents: read`). Pull-request CI cancels an older run when a newer commit is pushed to the same pull request or branch. Nightly reliability runs are not cancelled by a later manual or scheduled run.
+Workflow permissions are read-only (`contents: read`) by default. Pull-request CI cancels an older run when a newer commit is pushed to the same pull request or branch. Nightly reliability runs are not cancelled by a later manual or scheduled run.
+
+Only the nightly observability job receives additional permissions:
+
+- `actions: read` to find and download the previous scheduled history artifact;
+- `issues: write` to manage one automated reliability incident issue;
+- `contents: read` to check out the repository.
+
+Browser execution and report-merging jobs do not receive issue write access.
 
 ## Dependency cache
 
@@ -115,3 +124,41 @@ Nightly artifacts are retained longer for investigation:
 - per-engine reports: 14 days;
 - `playwright-reliability-report-unified`: 14 days;
 - intermediate `playwright-reliability-blob-*` inputs: 2 days.
+
+## Reliability history
+
+`Reliability / Trend and incident` runs after the unified nightly job with `always()`, except when the workflow is cancelled. It therefore still records an incident when browser execution, blob merge or summary generation fails.
+
+`scripts/reliability-history.mjs` reads the current compact summary and the most recent official history artifact. It:
+
+1. converts the current run into `passed`, `failed` or `incomplete`;
+2. deduplicates the same workflow run and attempt;
+3. keeps the latest 30 scheduled runs;
+4. calculates the recent pass rate and current status streak;
+5. writes a 14-run Markdown trend table;
+6. creates a deterministic incident plan and issue body.
+
+If the unified compact JSON is missing or malformed, the current run is recorded as `incomplete`. Expected projects are listed as missing and the merge-job result is included as a violation. The observability job does not silently turn an infrastructure failure into a pass.
+
+Official scheduled history is uploaded as `playwright-reliability-history` for 90 days. It contains:
+
+- `reliability-history.json` — up to 30 normalized scheduled runs;
+- `reliability-trend.md` — the recent trend shown in the Actions summary;
+- `reliability-incident-body.md` — the deterministic managed issue body;
+- `reliability-incident-plan.json` — the action and idempotency markers for issue automation.
+
+Manual `workflow_dispatch` runs upload `playwright-reliability-history-manual`. They create a standalone preview and never become the input for official scheduled history.
+
+## Reliability incident issue
+
+Only scheduled runs manage the issue titled `[E2E Reliability] Nightly browser reliability incident` with label `e2e-reliability`.
+
+Lifecycle:
+
+1. The first `failed` or `incomplete` scheduled run creates the issue.
+2. Later failed runs update the same issue and add at most one comment per workflow run attempt.
+3. A closed incident is reopened if a later scheduled run fails.
+4. The first clean scheduled run updates the issue, adds one recovery comment and closes it as completed.
+5. A clean scheduled run with no open incident performs no issue mutation.
+
+Stable HTML markers in the body and comments make reruns idempotent. Manual runs cannot open, update, reopen or close the incident issue.
