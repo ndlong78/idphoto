@@ -27,9 +27,31 @@ jobs:
         run: npm test
 
   browser-e2e:
+    name: Browser E2E / ${{ matrix.label }}
     needs: lint-and-test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - id: chromium
+            label: Chromium
+            browser: chromium
+            projects: '--project=chromium-desktop --project=chromium-mobile --project=cross-chromium'
+          - id: firefox
+            label: Firefox
+            browser: firefox
+            projects: '--project=cross-firefox'
+          - id: webkit
+            label: WebKit desktop
+            browser: webkit
+            projects: '--project=cross-webkit'
+          - id: iphone-webkit
+            label: iPhone WebKit
+            browser: webkit
+            projects: '--project=webkit-iphone-se --project=webkit-iphone-13'
     steps:
       - uses: actions/checkout@v4
 
@@ -44,17 +66,17 @@ jobs:
       - name: Install pinned Playwright test runner
         run: npm install --no-save --package-lock=false --ignore-scripts @playwright/test@1.61.1
 
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps "${{ matrix.browser }}"
 
       - name: Run browser export E2E tests
-        run: npm run test:e2e
+        run: npx playwright test ${{ matrix.projects }}
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.id }}
           path: |
             playwright-report/
             test-results/
