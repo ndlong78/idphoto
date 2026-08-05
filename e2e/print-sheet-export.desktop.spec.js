@@ -140,18 +140,19 @@ test('xuất tờ 10x15 gồm sáu ảnh Schengen đúng pixel và 300 DPI', asy
   await expect(page.locator('#s4')).toHaveClass(/active/);
 });
 
-test('xuất A4 ba ảnh hộ chiếu và tắt dấu cắt', async ({ page }) => {
+test('xuất A4 ngang ba ảnh hộ chiếu và tắt dấu cắt', async ({ page }) => {
   await page.locator('#print-sheet-paper').selectOption('a4');
   await page.locator('#print-sheet-copies').selectOption('3');
   await page.locator('#print-sheet-crop-marks').uncheck();
-  await expect(page.locator('#print-sheet-summary')).toContainText('3/16 ảnh');
-  await expect(page.locator('#print-sheet-summary')).toContainText('4 cột × 1 hàng');
+  await expect(page.locator('#print-sheet-summary')).toContainText('A4 · ngang');
+  await expect(page.locator('#print-sheet-summary')).toContainText('3/18 ảnh');
+  await expect(page.locator('#print-sheet-summary')).toContainText('6 cột × 1 hàng');
 
   const download = await confirmPrintSheetDownload(page);
-  const filename = 'photovisa_sheet_a4_passport-vn_3copies_2480x3508_300dpi.jpeg';
+  const filename = 'photovisa_sheet_a4_passport-vn_3copies_3508x2480_300dpi.jpeg';
   expect(download.suggestedFilename()).toBe(filename);
   const bytes = await readDownloadBytes(download);
-  expect(readJpegDimensions(bytes)).toEqual({ width: 2480, height: 3508 });
+  expect(readJpegDimensions(bytes)).toEqual({ width: 3508, height: 2480 });
   expect(readJpegDpi(bytes)).toMatchObject({ unit: 'dpi', x: 300, y: 300 });
 
   await expect(page.locator('#export-receipt-badge')).toHaveText('Tờ in');
