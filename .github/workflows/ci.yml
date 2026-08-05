@@ -16,6 +16,7 @@ concurrency:
 env:
   NODE_VERSION: '24'
   PLAYWRIGHT_VERSION: '1.61.1'
+  PLAYWRIGHT_DURATION_BUDGETS: config/playwright-duration-budgets.json
 
 jobs:
   lint-and-test:
@@ -151,6 +152,7 @@ jobs:
           playwright-summary.json
           playwright-summary.md
           playwright-summary.compact.json
+          --duration-budgets="$PLAYWRIGHT_DURATION_BUDGETS"
           --max-failed=0
           --max-flaky=0
           --require-complete
