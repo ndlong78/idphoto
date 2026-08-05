@@ -41,7 +41,19 @@ function createCounter(group) {
     total: 0,
     durationMs: 0,
     seenProjects: new Set(),
+    projectMetrics: new Map(),
+    projectTimings: [],
     missingProjects: [],
+  };
+}
+
+function createProjectMetric(projectName) {
+  return {
+    projectName,
+    tests: 0,
+    durationMs: 0,
+    averageTestDurationMs: 0,
+    maxTestDurationMs: 0,
   };
 }
 
@@ -93,9 +105,27 @@ function normalizeExpectedProjects(expectedProjects) {
   return new Set(normalized);
 }
 
+function orderedProjectMetrics(counter) {
+  const order = new Map(counter.projects.map((projectName, index) => [projectName, index]));
+  return [...counter.projectMetrics.values()]
+    .map((metric) => ({
+      ...metric,
+      averageTestDurationMs: metric.tests > 0
+        ? Math.round(metric.durationMs / metric.tests)
+        : 0,
+    }))
+    .sort((left, right) => {
+      const leftIndex = order.get(left.projectName) ?? Number.MAX_SAFE_INTEGER;
+      const rightIndex = order.get(right.projectName) ?? Number.MAX_SAFE_INTEGER;
+      return leftIndex - rightIndex || left.projectName.localeCompare(right.projectName);
+    });
+}
+
 function finalizeCounter(counter) {
   counter.missingProjects = counter.projects.filter((project) => !counter.seenProjects.has(project));
+  counter.projectTimings = orderedProjectMetrics(counter);
   delete counter.seenProjects;
+  delete counter.projectMetrics;
   return counter;
 }
 
@@ -104,7 +134,18 @@ function addTest(counter, test) {
   counter[bucket] += 1;
   counter.total += 1;
   counter.durationMs += durationMs;
-  if (test.projectName) counter.seenProjects.add(test.projectName);
+
+  const projectName = typeof test.projectName === 'string' ? test.projectName : '';
+  if (!projectName) return;
+
+  counter.seenProjects.add(projectName);
+  const metric = counter.projectMetrics.get(projectName) ?? createProjectMetric(projectName);
+  if (bucket !== 'skipped') {
+    metric.tests += 1;
+    metric.durationMs += durationMs;
+    metric.maxTestDurationMs = Math.max(metric.maxTestDurationMs, durationMs);
+  }
+  counter.projectMetrics.set(projectName, metric);
 }
 
 export function summarizePlaywrightReport(report, options = {}) {
@@ -166,6 +207,7 @@ export function summarizePlaywrightReport(report, options = {}) {
   return {
     groups,
     total,
+    projectTimings: groups.flatMap((group) => group.projectTimings),
     expectedProjects: expectedProjectSet ? [...expectedProjectSet] : [...KNOWN_PROJECTS],
     unknownProjects: [...unknownProjects].sort(),
     unexpectedProjects: [...unexpectedProjects].sort(),
@@ -182,6 +224,191 @@ function normalizeLimit(value, label) {
   return parsed;
 }
 
+function normalizePositiveInteger(value, label) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new RangeError(`${label} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function normalizeWarningRatio(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 1) {
+    throw new RangeError('duration warning ratio must be greater than 0 and less than 1');
+  }
+  return parsed;
+}
+
+function normalizeDurationBudgetConfig(config, options = {}) {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new TypeError('Playwright duration budget config must be an object');
+  }
+  if (!config.projects || typeof config.projects !== 'object' || Array.isArray(config.projects)) {
+    throw new TypeError('Playwright duration budget config must contain a projects object');
+  }
+
+  const warningRatio = normalizeWarningRatio(options.warningRatio ?? config.warningRatio ?? 0.75);
+  const projects = new Map();
+  for (const [projectName, rawBudget] of Object.entries(config.projects)) {
+    if (!KNOWN_PROJECT_SET.has(projectName)) {
+      throw new RangeError(`Unknown Playwright duration budget project: ${projectName}`);
+    }
+    if (!rawBudget || typeof rawBudget !== 'object' || Array.isArray(rawBudget)) {
+      throw new TypeError(`Duration budget for ${projectName} must be an object`);
+    }
+    projects.set(projectName, {
+      baselineAverageTestDurationMs: rawBudget.baselineAverageTestDurationMs == null
+        ? null
+        : normalizePositiveInteger(
+          rawBudget.baselineAverageTestDurationMs,
+          `${projectName}.baselineAverageTestDurationMs`,
+        ),
+      maxAverageTestDurationMs: normalizePositiveInteger(
+        rawBudget.maxAverageTestDurationMs,
+        `${projectName}.maxAverageTestDurationMs`,
+      ),
+      maxSingleTestDurationMs: normalizePositiveInteger(
+        rawBudget.maxSingleTestDurationMs,
+        `${projectName}.maxSingleTestDurationMs`,
+      ),
+    });
+  }
+
+  return {
+    schemaVersion: Number(config.schemaVersion) || 1,
+    warningRatio,
+    projects,
+  };
+}
+
+function durationViolation(projectName, metric, budget) {
+  const violations = [];
+  if (metric.averageTestDurationMs > budget.maxAverageTestDurationMs) {
+    violations.push(
+      `${projectName} average test duration ${formatDuration(metric.averageTestDurationMs)} exceeds budget ${formatDuration(budget.maxAverageTestDurationMs)}`,
+    );
+  }
+  if (metric.maxTestDurationMs > budget.maxSingleTestDurationMs) {
+    violations.push(
+      `${projectName} slowest test ${formatDuration(metric.maxTestDurationMs)} exceeds budget ${formatDuration(budget.maxSingleTestDurationMs)}`,
+    );
+  }
+  return violations;
+}
+
+function durationWarning(projectName, metric, budget, warningRatio) {
+  const warnings = [];
+  const averageWarningThreshold = budget.maxAverageTestDurationMs * warningRatio;
+  const singleWarningThreshold = budget.maxSingleTestDurationMs * warningRatio;
+
+  if (
+    metric.averageTestDurationMs >= averageWarningThreshold
+    && metric.averageTestDurationMs <= budget.maxAverageTestDurationMs
+  ) {
+    warnings.push(
+      `${projectName} average test duration ${formatDuration(metric.averageTestDurationMs)} reached ${formatPercent(metric.averageTestDurationMs / budget.maxAverageTestDurationMs)} of budget`,
+    );
+  }
+  if (
+    metric.maxTestDurationMs >= singleWarningThreshold
+    && metric.maxTestDurationMs <= budget.maxSingleTestDurationMs
+  ) {
+    warnings.push(
+      `${projectName} slowest test ${formatDuration(metric.maxTestDurationMs)} reached ${formatPercent(metric.maxTestDurationMs / budget.maxSingleTestDurationMs)} of budget`,
+    );
+  }
+  return warnings;
+}
+
+export function evaluatePlaywrightDurationBudgets(summary, config, options = {}) {
+  if (!summary || typeof summary !== 'object' || !Array.isArray(summary.expectedProjects)) {
+    throw new TypeError('Playwright summary must contain expectedProjects');
+  }
+
+  const normalized = normalizeDurationBudgetConfig(config, options);
+  const timingByProject = new Map(
+    (summary.projectTimings ?? []).map((timing) => [timing.projectName, timing]),
+  );
+  const projects = [];
+  const warnings = [];
+  const violations = [];
+  let maxUtilizationRatio = 0;
+
+  for (const projectName of summary.expectedProjects) {
+    const budget = normalized.projects.get(projectName);
+    if (!budget) {
+      violations.push(`missing duration budget for ${projectName}`);
+      projects.push({
+        projectName,
+        tests: 0,
+        durationMs: 0,
+        averageTestDurationMs: 0,
+        maxTestDurationMs: 0,
+        budget: null,
+        averageUtilizationRatio: 0,
+        maxTestUtilizationRatio: 0,
+        utilizationRatio: 0,
+        status: 'missing-budget',
+      });
+      continue;
+    }
+
+    const metric = timingByProject.get(projectName) ?? createProjectMetric(projectName);
+    if (metric.tests === 0) {
+      projects.push({
+        ...metric,
+        budget,
+        averageUtilizationRatio: 0,
+        maxTestUtilizationRatio: 0,
+        utilizationRatio: 0,
+        status: 'not-run',
+      });
+      continue;
+    }
+
+    const averageUtilizationRatio = metric.averageTestDurationMs / budget.maxAverageTestDurationMs;
+    const maxTestUtilizationRatio = metric.maxTestDurationMs / budget.maxSingleTestDurationMs;
+    const utilizationRatio = Math.max(averageUtilizationRatio, maxTestUtilizationRatio);
+    maxUtilizationRatio = Math.max(maxUtilizationRatio, utilizationRatio);
+
+    const projectViolations = durationViolation(projectName, metric, budget);
+    const projectWarnings = projectViolations.length === 0
+      ? durationWarning(projectName, metric, budget, normalized.warningRatio)
+      : [];
+    violations.push(...projectViolations);
+    warnings.push(...projectWarnings);
+
+    projects.push({
+      ...metric,
+      budget,
+      averageUtilizationRatio,
+      maxTestUtilizationRatio,
+      utilizationRatio,
+      status: projectViolations.length > 0
+        ? 'failed'
+        : projectWarnings.length > 0
+          ? 'warning'
+          : 'passed',
+    });
+  }
+
+  return {
+    schemaVersion: normalized.schemaVersion,
+    passed: violations.length === 0,
+    status: violations.length > 0
+      ? 'failed'
+      : warnings.length > 0
+        ? 'warning'
+        : 'passed',
+    warningRatio: normalized.warningRatio,
+    maxUtilizationRatio,
+    projects,
+    warnings,
+    violations,
+  };
+}
+
 export function evaluatePlaywrightGuardrails(summary, options = {}) {
   const maxFailed = normalizeLimit(options.maxFailed, 'maxFailed');
   const maxFlaky = normalizeLimit(options.maxFlaky, 'maxFlaky');
@@ -190,6 +417,7 @@ export function evaluatePlaywrightGuardrails(summary, options = {}) {
   const forbidUnexpected = options.forbidUnexpected == null
     ? forbidUnmapped
     : Boolean(options.forbidUnexpected);
+  const durationBudgets = options.durationBudgets ?? null;
   const violations = [];
 
   if (summary.total.failed > maxFailed) {
@@ -207,6 +435,9 @@ export function evaluatePlaywrightGuardrails(summary, options = {}) {
   if (forbidUnexpected && summary.unexpectedProjects.length > 0) {
     violations.push(`unexpected projects: ${summary.unexpectedProjects.join(', ')}`);
   }
+  if (durationBudgets && !durationBudgets.passed) {
+    violations.push(...durationBudgets.violations);
+  }
 
   return {
     passed: violations.length === 0,
@@ -216,7 +447,9 @@ export function evaluatePlaywrightGuardrails(summary, options = {}) {
       requireComplete,
       forbidUnmapped,
       forbidUnexpected,
+      durationBudgets: Boolean(durationBudgets),
     },
+    durationBudgets,
     violations,
   };
 }
@@ -231,6 +464,11 @@ export function formatDuration(durationMs) {
   return `${minutes}m ${remainingSeconds.toFixed(1)}s`;
 }
 
+function formatPercent(ratio) {
+  const value = Number.isFinite(ratio) && ratio >= 0 ? ratio : 0;
+  return `${(value * 100).toFixed(1)}%`;
+}
+
 function groupStatus(group) {
   if (group.failed > 0) return '❌ Failed';
   if (group.missingProjects.length > 0) return '⚠️ Incomplete';
@@ -238,8 +476,53 @@ function groupStatus(group) {
   return '✅ Passed';
 }
 
+function durationStatus(status) {
+  if (status === 'failed' || status === 'missing-budget') return '❌ Failed';
+  if (status === 'warning') return '⚠️ Warning';
+  if (status === 'not-run') return '➖ Not run';
+  return '✅ Passed';
+}
+
 function limitLabel(value) {
   return value == null ? 'not enforced' : String(value);
+}
+
+function renderDurationBudgets(lines, durationBudgets) {
+  if (!durationBudgets) return;
+
+  lines.push(
+    '### E2E duration budgets',
+    '',
+    `Status: ${durationBudgets.status === 'failed'
+      ? '❌ Failed'
+      : durationBudgets.status === 'warning'
+        ? '⚠️ Warning'
+        : '✅ Passed'} · Warning threshold: **${formatPercent(durationBudgets.warningRatio)}** · Highest utilization: **${formatPercent(durationBudgets.maxUtilizationRatio)}**.`,
+    '',
+    '| Project | Tests | Avg/test | Avg budget | Slowest test | Single-test budget | Utilization | Status |',
+    '| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
+  );
+
+  for (const project of durationBudgets.projects) {
+    const averageBudget = project.budget
+      ? formatDuration(project.budget.maxAverageTestDurationMs)
+      : '—';
+    const singleBudget = project.budget
+      ? formatDuration(project.budget.maxSingleTestDurationMs)
+      : '—';
+    const utilization = project.status === 'not-run' || project.status === 'missing-budget'
+      ? '—'
+      : formatPercent(project.utilizationRatio);
+    lines.push(`| ${project.projectName} | ${project.tests} | ${formatDuration(project.averageTestDurationMs)} | ${averageBudget} | ${formatDuration(project.maxTestDurationMs)} | ${singleBudget} | ${utilization} | ${durationStatus(project.status)} |`);
+  }
+
+  lines.push('');
+  if (durationBudgets.warnings.length > 0) {
+    lines.push(...durationBudgets.warnings.map((warning) => `- ⚠️ ${warning}`), '');
+  }
+  if (durationBudgets.violations.length > 0) {
+    lines.push(...durationBudgets.violations.map((violation) => `- ❌ ${violation}`), '');
+  }
 }
 
 export function renderPlaywrightSummaryMarkdown(summary, context = {}) {
@@ -286,6 +569,8 @@ export function renderPlaywrightSummaryMarkdown(summary, context = {}) {
     lines.push(`> Unexpected projects: ${summary.unexpectedProjects.map((project) => `\`${project}\``).join(', ')}. Check the project selection used by this workflow.`, '');
   }
 
+  renderDurationBudgets(lines, context.durationBudgets);
+
   if (context.guardrails) {
     const guardrails = context.guardrails;
     lines.push(
@@ -297,6 +582,9 @@ export function renderPlaywrightSummaryMarkdown(summary, context = {}) {
       `- Flaky tests: **${summary.total.flaky}**; limit: **${limitLabel(guardrails.limits.maxFlaky)}**.`,
       `- Required projects: **${summary.missingProjects.length === 0 ? 'complete' : `${summary.missingProjects.length} missing`}**.`,
       `- Unmapped projects: **${summary.unknownProjects.length}**; unexpected projects: **${summary.unexpectedProjects.length}**.`,
+      `- Duration budgets: **${guardrails.durationBudgets
+        ? guardrails.durationBudgets.status
+        : 'not enforced'}**.`,
       '',
     );
 
@@ -325,6 +613,10 @@ function parseCliArguments(args) {
         .split(',')
         .map((project) => project.trim())
         .filter(Boolean);
+    } else if (flag.startsWith('--duration-budgets=')) {
+      options.durationBudgetsPath = resolve(flag.slice('--duration-budgets='.length));
+    } else if (flag.startsWith('--duration-warning-ratio=')) {
+      options.durationWarningRatio = flag.slice('--duration-warning-ratio='.length);
     } else if (flag === '--require-complete') {
       options.requireComplete = true;
     } else if (flag === '--forbid-unmapped') {
@@ -356,17 +648,33 @@ async function runCli() {
   const summary = summarizePlaywrightReport(report, {
     expectedProjects: options.expectedProjects,
   });
-  const guardrails = evaluatePlaywrightGuardrails(summary, options);
+  const durationBudgetConfig = options.durationBudgetsPath
+    ? JSON.parse(await readFile(options.durationBudgetsPath, 'utf8'))
+    : null;
+  const durationBudgets = durationBudgetConfig
+    ? evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig, {
+      warningRatio: options.durationWarningRatio,
+    })
+    : null;
+  const guardrails = evaluatePlaywrightGuardrails(summary, {
+    ...options,
+    durationBudgets,
+  });
   const markdown = renderPlaywrightSummaryMarkdown(summary, {
     sha: process.env.GITHUB_SHA,
     title: process.env.PLAYWRIGHT_SUMMARY_TITLE,
     note: process.env.PLAYWRIGHT_SUMMARY_NOTE,
+    durationBudgets,
     guardrails,
   });
 
   await Promise.all([
     writeFile(markdownPath, markdown, 'utf8'),
-    writeFile(compactJsonPath, `${JSON.stringify({ ...summary, guardrails }, null, 2)}\n`, 'utf8'),
+    writeFile(compactJsonPath, `${JSON.stringify({
+      ...summary,
+      performance: durationBudgets,
+      guardrails,
+    }, null, 2)}\n`, 'utf8'),
   ]);
 
   if (process.env.GITHUB_STEP_SUMMARY) {
