@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  evaluatePlaywrightDurationBudgets,
   evaluatePlaywrightGuardrails,
   formatDuration,
   renderPlaywrightSummaryMarkdown,
@@ -27,6 +28,14 @@ function reportWithTests(tests) {
 
 function result(status, duration) {
   return { status, duration };
+}
+
+function durationBudgetConfig(projects, warningRatio = 0.75) {
+  return {
+    schemaVersion: 1,
+    warningRatio,
+    projects,
+  };
 }
 
 test('summarizePlaywrightReport groups projects and preserves flaky retries', () => {
@@ -94,6 +103,24 @@ test('summarizePlaywrightReport groups projects and preserves flaky retries', ()
     missingProjects: [],
   });
 
+  assert.deepEqual(summary.projectTimings.find((timing) => (
+    timing.projectName === 'chromium-mobile'
+  )), {
+    projectName: 'chromium-mobile',
+    tests: 1,
+    durationMs: 1000,
+    averageTestDurationMs: 1000,
+    maxTestDurationMs: 1000,
+  });
+  assert.deepEqual(summary.projectTimings.find((timing) => (
+    timing.projectName === 'cross-firefox'
+  )), {
+    projectName: 'cross-firefox',
+    tests: 0,
+    durationMs: 0,
+    averageTestDurationMs: 0,
+    maxTestDurationMs: 0,
+  });
   assert.deepEqual(summary.missingProjects, []);
   assert.deepEqual(summary.unknownProjects, []);
   assert.deepEqual(summary.unexpectedProjects, []);
@@ -155,6 +182,135 @@ test('summarizePlaywrightReport rejects unknown expected projects', () => {
       expectedProjects: ['future-browser'],
     }),
     /Unknown expected Playwright projects/,
+  );
+});
+
+test('evaluatePlaywrightDurationBudgets passes below warning threshold', () => {
+  const summary = summarizePlaywrightReport(reportWithTests([
+    {
+      projectName: 'chromium-desktop',
+      status: 'expected',
+      results: [result('passed', 1000)],
+    },
+    {
+      projectName: 'chromium-desktop',
+      status: 'expected',
+      results: [result('passed', 1500)],
+    },
+  ]), { expectedProjects: ['chromium-desktop'] });
+  const performance = evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig({
+    'chromium-desktop': {
+      maxAverageTestDurationMs: 4000,
+      maxSingleTestDurationMs: 5000,
+    },
+  }));
+
+  assert.equal(performance.status, 'passed');
+  assert.equal(performance.passed, true);
+  assert.equal(performance.projects[0].averageTestDurationMs, 1250);
+  assert.equal(performance.projects[0].maxTestDurationMs, 1500);
+  assert.equal(performance.maxUtilizationRatio, 0.3125);
+  assert.deepEqual(performance.warnings, []);
+  assert.deepEqual(performance.violations, []);
+});
+
+test('evaluatePlaywrightDurationBudgets warns near a hard limit without failing', () => {
+  const summary = summarizePlaywrightReport(reportWithTests([
+    {
+      projectName: 'cross-webkit',
+      status: 'expected',
+      results: [result('passed', 16000)],
+    },
+  ]), { expectedProjects: ['cross-webkit'] });
+  const performance = evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig({
+    'cross-webkit': {
+      maxAverageTestDurationMs: 20000,
+      maxSingleTestDurationMs: 25000,
+    },
+  }));
+  const guardrails = evaluatePlaywrightGuardrails(summary, {
+    maxFailed: 0,
+    maxFlaky: 0,
+    durationBudgets: performance,
+  });
+
+  assert.equal(performance.status, 'warning');
+  assert.equal(performance.passed, true);
+  assert.ok(performance.warnings.some((warning) => warning.includes('80.0%')));
+  assert.equal(guardrails.passed, true, 'warnings remain non-blocking');
+});
+
+test('evaluatePlaywrightDurationBudgets fails average and single-test regressions', () => {
+  const summary = summarizePlaywrightReport(reportWithTests([
+    {
+      projectName: 'cross-firefox',
+      status: 'expected',
+      results: [result('passed', 9000)],
+    },
+    {
+      projectName: 'cross-firefox',
+      status: 'expected',
+      results: [result('passed', 17000)],
+    },
+  ]), { expectedProjects: ['cross-firefox'] });
+  const performance = evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig({
+    'cross-firefox': {
+      maxAverageTestDurationMs: 8000,
+      maxSingleTestDurationMs: 15000,
+    },
+  }));
+  const guardrails = evaluatePlaywrightGuardrails(summary, {
+    maxFailed: 0,
+    maxFlaky: 0,
+    durationBudgets: performance,
+  });
+
+  assert.equal(performance.status, 'failed');
+  assert.equal(performance.passed, false);
+  assert.equal(performance.violations.length, 2);
+  assert.ok(performance.violations.some((violation) => violation.includes('average test duration')));
+  assert.ok(performance.violations.some((violation) => violation.includes('slowest test')));
+  assert.equal(guardrails.passed, false);
+  assert.ok(guardrails.violations.some((violation) => violation.includes('cross-firefox')));
+});
+
+test('evaluatePlaywrightDurationBudgets reports a missing expected-project budget', () => {
+  const summary = summarizePlaywrightReport(reportWithTests([
+    {
+      projectName: 'chromium-desktop',
+      status: 'expected',
+      results: [result('passed', 1000)],
+    },
+  ]), { expectedProjects: ['chromium-desktop'] });
+  const performance = evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig({}));
+
+  assert.equal(performance.status, 'failed');
+  assert.equal(performance.projects[0].status, 'missing-budget');
+  assert.deepEqual(performance.violations, ['missing duration budget for chromium-desktop']);
+});
+
+test('evaluatePlaywrightDurationBudgets rejects unknown projects and invalid warning ratios', () => {
+  const summary = summarizePlaywrightReport(reportWithTests([]), {
+    expectedProjects: ['chromium-desktop'],
+  });
+
+  assert.throws(
+    () => evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig({
+      'future-browser': {
+        maxAverageTestDurationMs: 1000,
+        maxSingleTestDurationMs: 2000,
+      },
+    })),
+    /Unknown Playwright duration budget project/,
+  );
+  assert.throws(
+    () => evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig({
+      'chromium-desktop': {
+        maxAverageTestDurationMs: 1000,
+        maxSingleTestDurationMs: 2000,
+      },
+    }, 1)),
+    /warning ratio/,
   );
 });
 
@@ -229,6 +385,37 @@ test('renderPlaywrightSummaryMarkdown includes totals and incomplete warnings', 
   assert.match(markdown, /⚠️ Incomplete/);
   assert.match(markdown, /Missing projects:/);
   assert.match(markdown, /unified Playwright artifact/);
+});
+
+test('renderPlaywrightSummaryMarkdown includes duration budget status and table', () => {
+  const summary = summarizePlaywrightReport(reportWithTests([
+    {
+      projectName: 'chromium-desktop',
+      status: 'expected',
+      results: [result('passed', 8000)],
+    },
+  ]), { expectedProjects: ['chromium-desktop'] });
+  const performance = evaluatePlaywrightDurationBudgets(summary, durationBudgetConfig({
+    'chromium-desktop': {
+      maxAverageTestDurationMs: 10000,
+      maxSingleTestDurationMs: 12000,
+    },
+  }));
+  const guardrails = evaluatePlaywrightGuardrails(summary, {
+    maxFailed: 0,
+    maxFlaky: 0,
+    durationBudgets: performance,
+  });
+  const markdown = renderPlaywrightSummaryMarkdown(summary, {
+    durationBudgets: performance,
+    guardrails,
+  });
+
+  assert.match(markdown, /E2E duration budgets/);
+  assert.match(markdown, /Warning threshold: \*\*75\.0%\*\*/);
+  assert.match(markdown, /chromium-desktop \| 1 \| 8\.0s \| 10\.0s/);
+  assert.match(markdown, /⚠️ Warning/);
+  assert.match(markdown, /Duration budgets: \*\*warning\*\*/);
 });
 
 test('renderPlaywrightSummaryMarkdown includes strict guardrail status', () => {
