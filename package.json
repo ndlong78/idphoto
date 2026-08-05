@@ -14,6 +14,7 @@
     "test:e2e:validation": "playwright test e2e/upload-validation-reset.desktop.spec.js --project=chromium-desktop",
     "test:e2e:mobile-journey": "playwright test e2e/upload-export-journey.mobile.spec.js --project=chromium-mobile",
     "test:e2e:rotation": "playwright test e2e/mobile-rotation-small-screen.mobile.spec.js --project=chromium-mobile",
+    "test:e2e:cross-browser": "playwright test e2e/cross-browser-export.cross.spec.js --project=cross-chromium --project=cross-firefox --project=cross-webkit",
     "lint": "eslint src/ tests/ e2e/ scripts/ playwright.config.js",
     "lint:fix": "eslint src/ tests/ e2e/ scripts/ playwright.config.js --fix"
   },
