@@ -12,6 +12,14 @@ function appendText(doc, parent, tag, className, text) {
   return element;
 }
 
+function scheduleMicrotask(callback) {
+  if (typeof globalThis.queueMicrotask === 'function') {
+    globalThis.queueMicrotask(callback);
+    return;
+  }
+  Promise.resolve().then(callback);
+}
+
 function ensureStylesheet(doc) {
   if (doc.getElementById('print-sheet-stylesheet')) return;
   const link = doc.createElement('link');
@@ -215,7 +223,9 @@ export function startPrintSheetView({
   documentRef.getElementById('print-sheet-copies')?.addEventListener('change', () => refresh(), { signal });
   documentRef.getElementById('print-sheet-gap')?.addEventListener('change', () => refresh(), { signal });
   documentRef.querySelectorAll('.fbtn').forEach((button) => {
-    button.addEventListener('click', () => refresh(), { signal });
+    // Không phụ thuộc thứ tự bind listener với ui.js. Microtask chỉ chạy sau khi
+    // toàn bộ click handlers đồng bộ đã cập nhật state.curFmt.
+    button.addEventListener('click', () => scheduleMicrotask(() => refresh()), { signal });
   });
 
   const MutationObserverRef = documentRef.defaultView?.MutationObserver
