@@ -183,7 +183,6 @@ async function assertMobileReadinessDialog(page) {
     return {
       left: box.left,
       right: box.right,
-      width: box.width,
       viewportWidth: window.innerWidth,
       cardClientWidth: card?.clientWidth ?? 0,
       cardScrollWidth: card?.scrollWidth ?? 0,
@@ -198,7 +197,7 @@ async function assertMobileReadinessDialog(page) {
     return { y: box.y, width: box.width, height: box.height };
   }));
   expect(buttons).toHaveLength(2);
-  expect(buttons[1].y).toBeGreaterThan(buttons[0].y);
+  expect(Math.abs(buttons[1].y - buttons[0].y)).toBeGreaterThan(20);
   expect(Math.abs(buttons[0].width - buttons[1].width)).toBeLessThanOrEqual(2);
   expect(buttons.every((button) => button.height >= 40)).toBe(true);
   await assertNoHorizontalOverflow(page);
