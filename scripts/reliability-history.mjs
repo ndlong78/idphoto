@@ -2,16 +2,22 @@ import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const RELIABILITY_HISTORY_SCHEMA_VERSION = 1;
+export const RELIABILITY_HISTORY_SCHEMA_VERSION = 2;
 export const RELIABILITY_INCIDENT_TITLE = '[E2E Reliability] Nightly browser reliability incident';
 export const RELIABILITY_INCIDENT_LABEL = 'e2e-reliability';
 export const RELIABILITY_INCIDENT_MARKER = '<!-- idphoto-e2e-reliability-incident -->';
 
 const VALID_STATUSES = new Set(['passed', 'failed', 'incomplete']);
+const VALID_PERFORMANCE_STATUSES = new Set(['passed', 'warning', 'failed', 'not-evaluated']);
 
 function toNonNegativeInteger(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function toNonNegativeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function normalizeStringArray(value) {
@@ -37,8 +43,24 @@ function normalizeTotal(total) {
   };
 }
 
+function normalizePerformance(performance) {
+  const rawStatus = String(performance?.status ?? 'not-evaluated');
+  const status = VALID_PERFORMANCE_STATUSES.has(rawStatus)
+    ? rawStatus
+    : 'not-evaluated';
+  return {
+    status,
+    passed: status !== 'failed',
+    warningRatio: toNonNegativeNumber(performance?.warningRatio),
+    maxUtilizationRatio: toNonNegativeNumber(performance?.maxUtilizationRatio),
+    warnings: normalizeStringArray(performance?.warnings),
+    violations: normalizeStringArray(performance?.violations),
+  };
+}
+
 function synthesizeViolations(summary, status, sourceError) {
   const violations = normalizeStringArray(summary?.guardrails?.violations);
+  const performance = normalizePerformance(summary?.performance);
   const total = normalizeTotal(summary?.total);
   const missingProjects = normalizeStringArray(summary?.missingProjects);
   const unknownProjects = normalizeStringArray(summary?.unknownProjects);
@@ -50,6 +72,7 @@ function synthesizeViolations(summary, status, sourceError) {
   if (missingProjects.length > 0) violations.push(`missing projects: ${missingProjects.join(', ')}`);
   if (unknownProjects.length > 0) violations.push(`unmapped projects: ${unknownProjects.join(', ')}`);
   if (unexpectedProjects.length > 0) violations.push(`unexpected projects: ${unexpectedProjects.join(', ')}`);
+  violations.push(...performance.violations);
   if (status !== 'passed' && violations.length === 0) {
     violations.push('Reliability guardrails did not pass');
   }
@@ -67,6 +90,7 @@ function deriveRunUrl(context) {
 export function createReliabilityEntry(summary, context = {}) {
   const hasSummary = Boolean(summary && typeof summary === 'object' && summary.total);
   const total = normalizeTotal(summary?.total);
+  const performance = normalizePerformance(summary?.performance);
   const missingProjects = hasSummary
     ? normalizeStringArray(summary?.missingProjects)
     : normalizeStringArray(context.expectedProjects);
@@ -79,6 +103,7 @@ export function createReliabilityEntry(summary, context = {}) {
     status = 'incomplete';
   } else if (
     !guardrailsPassed
+    || performance.status === 'failed'
     || total.failed > 0
     || total.flaky > 0
     || unknownProjects.length > 0
@@ -106,6 +131,7 @@ export function createReliabilityEntry(summary, context = {}) {
     status,
     guardrailsPassed: status === 'passed' && guardrailsPassed,
     total,
+    performance,
     missingProjects,
     unknownProjects,
     unexpectedProjects,
@@ -133,6 +159,7 @@ function normalizeHistoryEntry(entry) {
     status,
     guardrailsPassed: Boolean(entry.guardrailsPassed),
     total: normalizeTotal(entry.total),
+    performance: normalizePerformance(entry.performance),
     missingProjects: normalizeStringArray(entry.missingProjects),
     unknownProjects: normalizeStringArray(entry.unknownProjects),
     unexpectedProjects: normalizeStringArray(entry.unexpectedProjects),
@@ -192,6 +219,12 @@ export function calculateReliabilityTrend(history, options = {}) {
     currentStreak,
     flakyRuns: entries.filter((entry) => entry.total.flaky > 0).length,
     failedTestRuns: entries.filter((entry) => entry.total.failed > 0).length,
+    performanceWarningRuns: entries.filter((entry) => entry.performance.status === 'warning').length,
+    performanceFailedRuns: entries.filter((entry) => entry.performance.status === 'failed').length,
+    peakPerformanceUtilizationRatio: entries.reduce(
+      (peak, entry) => Math.max(peak, entry.performance.maxUtilizationRatio),
+      0,
+    ),
     entries,
   };
 }
@@ -203,11 +236,24 @@ function formatDuration(durationMs) {
   return `${minutes}m ${(seconds - (minutes * 60)).toFixed(1)}s`;
 }
 
+function formatPercent(ratio) {
+  const value = Number.isFinite(ratio) && ratio >= 0 ? ratio : 0;
+  return `${(value * 100).toFixed(1)}%`;
+}
+
 function statusLabel(status) {
   if (status === 'passed') return '✅ Passed';
   if (status === 'failed') return '❌ Failed';
   if (status === 'incomplete') return '⚠️ Incomplete';
   return '❔ Unknown';
+}
+
+function performanceLabel(performance) {
+  if (performance.status === 'not-evaluated') return '➖ Not evaluated';
+  const utilization = formatPercent(performance.maxUtilizationRatio);
+  if (performance.status === 'failed') return `❌ ${utilization}`;
+  if (performance.status === 'warning') return `⚠️ ${utilization}`;
+  return `✅ ${utilization}`;
 }
 
 function formatRunLink(entry) {
@@ -227,21 +273,21 @@ export function renderReliabilityTrendMarkdown(history, options = {}) {
     '',
     `Current status: **${statusLabel(trend.currentStatus)}** · Current streak: **${trend.currentStreak}** · Pass rate: **${percentage}** over **${trend.counts.total}** run(s).`,
     '',
-    '| Run | Recorded (UTC) | Status | Passed | Flaky | Failed | Missing | Test time | Repeat |',
-    '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    '| Run | Recorded (UTC) | Status | Performance | Passed | Flaky | Failed | Missing | Test time | Repeat |',
+    '| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
   ];
 
   for (const entry of trend.entries) {
-    lines.push(`| ${formatRunLink(entry)} | ${entry.recordedAt.replace('T', ' ').replace('.000Z', 'Z')} | ${statusLabel(entry.status)} | ${entry.total.passed} | ${entry.total.flaky} | ${entry.total.failed} | ${entry.missingProjects.length} | ${formatDuration(entry.total.durationMs)} | ${entry.repeatEach}× |`);
+    lines.push(`| ${formatRunLink(entry)} | ${entry.recordedAt.replace('T', ' ').replace('.000Z', 'Z')} | ${statusLabel(entry.status)} | ${performanceLabel(entry.performance)} | ${entry.total.passed} | ${entry.total.flaky} | ${entry.total.failed} | ${entry.missingProjects.length} | ${formatDuration(entry.total.durationMs)} | ${entry.repeatEach}× |`);
   }
 
   if (trend.entries.length === 0) {
-    lines.push('| — | — | ❔ No history | 0 | 0 | 0 | 0 | 0.0s | — |');
+    lines.push('| — | — | ❔ No history | ➖ Not evaluated | 0 | 0 | 0 | 0 | 0.0s | — |');
   }
 
   lines.push(
     '',
-    `Window totals: **${trend.counts.passed} passed**, **${trend.counts.failed} failed**, **${trend.counts.incomplete} incomplete**, **${trend.flakyRuns} run(s) with flaky tests**.`,
+    `Window totals: **${trend.counts.passed} passed**, **${trend.counts.failed} failed**, **${trend.counts.incomplete} incomplete**, **${trend.flakyRuns} run(s) with flaky tests**, **${trend.performanceWarningRuns} performance warning run(s)** and **${trend.performanceFailedRuns} performance failure run(s)**. Peak duration-budget utilization: **${formatPercent(trend.peakPerformanceUtilizationRatio)}**.`,
     '',
   );
   return lines.join('\n');
@@ -264,8 +310,8 @@ export function buildReliabilityIncidentPlan(history, options = {}) {
   const status = statusLabel(current.status);
   const link = current.runUrl ? `[workflow run ${current.runNumber || current.runId}](${current.runUrl})` : `workflow run ${current.runNumber || current.runId}`;
   const comment = current.status === 'passed'
-    ? `${marker}\n✅ Nightly E2E reliability recovered on ${link}. The automated incident can be closed.`
-    : `${marker}\n${status} on ${link}. Failed: **${current.total.failed}**, flaky: **${current.total.flaky}**, missing projects: **${current.missingProjects.length}**.`;
+    ? `${marker}\n✅ Nightly E2E reliability recovered on ${link}. Performance: **${current.performance.status}** at **${formatPercent(current.performance.maxUtilizationRatio)}**. The automated incident can be closed.`
+    : `${marker}\n${status} on ${link}. Failed: **${current.total.failed}**, flaky: **${current.total.flaky}**, missing projects: **${current.missingProjects.length}**, performance: **${current.performance.status}** at **${formatPercent(current.performance.maxUtilizationRatio)}**.`;
 
   return {
     schemaVersion: RELIABILITY_HISTORY_SCHEMA_VERSION,
@@ -294,6 +340,9 @@ export function renderReliabilityIncidentBody(history, options = {}) {
   const violations = current.violations.length > 0
     ? current.violations.map((violation) => `- ${violation}`).join('\n')
     : '- None';
+  const performanceWarnings = current.performance.warnings.length > 0
+    ? current.performance.warnings.map((warning) => `- ${warning}`).join('\n')
+    : '- None';
   const runLink = current.runUrl ? `[Open workflow run](${current.runUrl})` : 'Workflow run link unavailable';
 
   return [
@@ -305,13 +354,17 @@ export function renderReliabilityIncidentBody(history, options = {}) {
     '',
     `${runLink} · Commit: \`${current.sha.slice(0, 12) || 'unknown'}\` · Repeat: **${current.repeatEach}×**`,
     '',
-    '| Passed | Flaky | Failed | Skipped | Missing projects |',
-    '| ---: | ---: | ---: | ---: | ---: |',
-    `| ${current.total.passed} | ${current.total.flaky} | ${current.total.failed} | ${current.total.skipped} | ${current.missingProjects.length} |`,
+    '| Passed | Flaky | Failed | Skipped | Missing projects | Performance |',
+    '| ---: | ---: | ---: | ---: | ---: | --- |',
+    `| ${current.total.passed} | ${current.total.flaky} | ${current.total.failed} | ${current.total.skipped} | ${current.missingProjects.length} | ${performanceLabel(current.performance)} |`,
     '',
     '## Current guardrail violations',
     '',
     violations,
+    '',
+    '## Performance warnings',
+    '',
+    performanceWarnings,
     '',
     trendMarkdown,
     'This issue is managed automatically by `.github/workflows/e2e-reliability.yml`. Repeated failures update this issue; the first clean scheduled run closes it.',
