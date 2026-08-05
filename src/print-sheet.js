@@ -1,6 +1,6 @@
 import { downloadBlobFile } from './download.js';
 import { clearStagedExportForBundle } from './export-delivery-session.js';
-import { createExportCanvas } from './export.js';
+import { createExportCanvas } from './export-render.js';
 import { clearExportRecovery } from './export-recovery.js';
 import { recordExportReceipt } from './export-receipt.js';
 import { canvasToDpiBlob } from './image-metadata.js';
