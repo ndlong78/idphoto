@@ -6,7 +6,7 @@ export const PRINT_SHEET_PAPERS = Object.freeze({
     label: '10 × 15 cm',
     widthMm: 100,
     heightMm: 150,
-    defaultMarginMm: 5,
+    defaultMarginMm: 4,
     defaultGapMm: 3,
     defaultOrientation: 'portrait',
   }),
