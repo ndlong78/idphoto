@@ -201,7 +201,7 @@ export function refreshPrintSheetPanel(doc = globalThis.document, {
 }
 
 let activeController = null;
-let activeEditorObserver = null;
+let activeUiObserver = null;
 
 export function startPrintSheetView({
   documentRef = globalThis.document,
@@ -210,7 +210,7 @@ export function startPrintSheetView({
   const panel = ensurePrintSheetPanel(documentRef);
   if (!panel) return () => {};
   activeController?.abort();
-  activeEditorObserver?.disconnect();
+  activeUiObserver?.disconnect();
   activeController = new AbortController();
   const { signal } = activeController;
 
@@ -222,21 +222,34 @@ export function startPrintSheetView({
   }, { signal });
   documentRef.getElementById('print-sheet-copies')?.addEventListener('change', () => refresh(), { signal });
   documentRef.getElementById('print-sheet-gap')?.addEventListener('change', () => refresh(), { signal });
-  documentRef.querySelectorAll('.fbtn').forEach((button) => {
-    // Không phụ thuộc thứ tự bind listener với ui.js. Microtask chỉ chạy sau khi
-    // toàn bộ click handlers đồng bộ đã cập nhật state.curFmt.
-    button.addEventListener('click', () => scheduleMicrotask(() => refresh()), { signal });
-  });
+
+  // Event delegation survives any future replacement of preset buttons. The
+  // microtask remains a harmless fallback, while the size badge observer below
+  // is the authoritative signal that ui.js committed the new preset.
+  documentRef.addEventListener('click', (event) => {
+    if (!event.target?.closest?.('.fbtn')) return;
+    scheduleMicrotask(() => refresh());
+  }, { signal });
 
   const MutationObserverRef = documentRef.defaultView?.MutationObserver
     ?? globalThis.MutationObserver;
   const editorSection = documentRef.getElementById('editor-section');
-  if (typeof MutationObserverRef === 'function' && editorSection) {
-    activeEditorObserver = new MutationObserverRef(() => refresh());
-    activeEditorObserver.observe(editorSection, {
-      attributes: true,
-      attributeFilter: ['style'],
-    });
+  const sizeBadge = documentRef.getElementById('size-badge');
+  if (typeof MutationObserverRef === 'function') {
+    activeUiObserver = new MutationObserverRef(() => refresh());
+    if (editorSection) {
+      activeUiObserver.observe(editorSection, {
+        attributes: true,
+        attributeFilter: ['style'],
+      });
+    }
+    if (sizeBadge) {
+      activeUiObserver.observe(sizeBadge, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    }
   }
 
   const exportButton = documentRef.getElementById('btn-print-sheet');
@@ -256,7 +269,7 @@ export function startPrintSheetView({
 
   return () => {
     activeController?.abort();
-    activeEditorObserver?.disconnect();
-    activeEditorObserver = null;
+    activeUiObserver?.disconnect();
+    activeUiObserver = null;
   };
 }
