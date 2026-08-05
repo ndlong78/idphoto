@@ -6,11 +6,7 @@ import {
 } from './export-delivery-session.js';
 import { clearExportRecovery } from './export-recovery.js';
 import { recordExportReceipt } from './export-receipt.js';
-import {
-  createExportCanvas,
-  ensureCanvasDimensions,
-  resolveExportConfig,
-} from './export-render.js';
+import { createExportCanvas } from './export-render.js';
 import { canvasToDpiBlob } from './image-metadata.js';
 import { manualReviewStore } from './manual-review.js';
 import { state } from './state.js';
