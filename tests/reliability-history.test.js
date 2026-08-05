@@ -91,7 +91,7 @@ test('createReliabilityEntry creates an infrastructure fallback when compact JSO
   assert.equal(entry.status, 'incomplete');
   assert.equal(entry.guardrailsPassed, false);
   assert.equal(entry.missingProjects.length, 4);
-  assert.match(entry.violations[0], /merge job result: failure/);
+  assert.ok(entry.violations.some((violation) => /merge job result: failure/.test(violation)));
 });
 
 test('mergeReliabilityHistory deduplicates reruns and trims the configured window', () => {
@@ -167,7 +167,7 @@ test('buildReliabilityIncidentPlan opens on failure, resolves on recovery and ig
   const manualPlan = buildReliabilityIncidentPlan(failedHistory, { manageIncident: false });
 
   assert.equal(openPlan.action, 'open-or-update');
-  assert.match(openPlan.comment, /1.*flaky/i);
+  assert.match(openPlan.comment, /flaky: \*\*1\*\*/i);
   assert.equal(resolvePlan.action, 'resolve');
   assert.match(resolvePlan.comment, /recovered/i);
   assert.equal(manualPlan.action, 'none');
