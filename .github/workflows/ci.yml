@@ -85,7 +85,7 @@ jobs:
         run: npx playwright install --with-deps "${{ matrix.browser }}"
 
       - name: Run browser export E2E tests
-        run: npx playwright test ${{ matrix.projects }}
+        run: npx playwright test ${{ matrix.projects }} --fail-on-flaky-tests
 
       - name: Upload Playwright shard report
         if: ${{ !cancelled() }}
@@ -145,8 +145,17 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-summary.json
         run: npx playwright merge-reports --reporter=html,json ./all-blob-reports
 
-      - name: Write browser summary
-        run: node scripts/playwright-report-summary.mjs playwright-summary.json playwright-summary.md playwright-summary.compact.json
+      - name: Write browser summary and enforce reliability guardrails
+        run: >-
+          node scripts/playwright-report-summary.mjs
+          playwright-summary.json
+          playwright-summary.md
+          playwright-summary.compact.json
+          --max-failed=0
+          --max-flaky=0
+          --require-complete
+          --forbid-unmapped
+          --forbid-unexpected
 
       - name: Upload unified Playwright report
         if: ${{ !cancelled() }}
