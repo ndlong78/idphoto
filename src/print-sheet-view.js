@@ -193,6 +193,7 @@ export function refreshPrintSheetPanel(doc = globalThis.document, {
 }
 
 let activeController = null;
+let activeEditorObserver = null;
 
 export function startPrintSheetView({
   documentRef = globalThis.document,
@@ -201,6 +202,7 @@ export function startPrintSheetView({
   const panel = ensurePrintSheetPanel(documentRef);
   if (!panel) return () => {};
   activeController?.abort();
+  activeEditorObserver?.disconnect();
   activeController = new AbortController();
   const { signal } = activeController;
 
@@ -215,6 +217,17 @@ export function startPrintSheetView({
   documentRef.querySelectorAll('.fbtn').forEach((button) => {
     button.addEventListener('click', () => refresh(), { signal });
   });
+
+  const MutationObserverRef = documentRef.defaultView?.MutationObserver
+    ?? globalThis.MutationObserver;
+  const editorSection = documentRef.getElementById('editor-section');
+  if (typeof MutationObserverRef === 'function' && editorSection) {
+    activeEditorObserver = new MutationObserverRef(() => refresh());
+    activeEditorObserver.observe(editorSection, {
+      attributes: true,
+      attributeFilter: ['style'],
+    });
+  }
 
   const exportButton = documentRef.getElementById('btn-print-sheet');
   exportButton?.addEventListener('click', async () => {
@@ -231,5 +244,9 @@ export function startPrintSheetView({
     }
   }, { signal });
 
-  return () => activeController?.abort();
+  return () => {
+    activeController?.abort();
+    activeEditorObserver?.disconnect();
+    activeEditorObserver = null;
+  };
 }
