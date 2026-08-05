@@ -60,11 +60,16 @@ export function ensureCanvasDimensions(sourceCanvas, width, height) {
   return exactCanvas;
 }
 
-export async function createExportBlob(mode) {
+export async function createExportCanvas(mode) {
   const format = FMTS[state.curFmt];
   const config = resolveExportConfig(mode, format);
   const renderedCanvas = await renderResult(config.scale);
   const canvas = ensureCanvasDimensions(renderedCanvas, config.width, config.height);
+  return { canvas, ...config };
+}
+
+export async function createExportBlob(mode) {
+  const { canvas, ...config } = await createExportCanvas(mode);
   const blob = await canvasToDpiBlob(canvas, config.mimeType, config.targetDpi, 1);
   const filename = [
     'photovisa',
