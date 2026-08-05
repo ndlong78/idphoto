@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const isCi = Boolean(process.env.CI);
+const retainedEvidenceMode = isCi ? 'retain-on-failure-and-retries' : 'retain-on-failure';
 
 export default defineConfig({
   testDir: './e2e',
@@ -18,9 +19,9 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:4173',
     acceptDownloads: true,
-    trace: 'retain-on-failure',
+    trace: retainedEvidenceMode,
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: retainedEvidenceMode,
   },
   webServer: {
     command: 'node scripts/static-server.mjs',
