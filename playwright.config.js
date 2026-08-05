@@ -13,7 +13,7 @@ export default defineConfig({
     timeout: 5_000,
   },
   reporter: isCi
-    ? [['github'], ['html', { open: 'never' }]]
+    ? [['github'], ['blob'], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:4173',

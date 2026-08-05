@@ -87,7 +87,7 @@ jobs:
       - name: Run browser export E2E tests
         run: npx playwright test ${{ matrix.projects }}
 
-      - name: Upload Playwright report
+      - name: Upload Playwright shard report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
@@ -96,4 +96,67 @@ jobs:
             playwright-report/
             test-results/
           if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Playwright blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-blob-${{ matrix.id }}
+          path: blob-report/
+          if-no-files-found: warn
+          retention-days: 1
+
+  merge-browser-reports:
+    name: Browser E2E / Unified report
+    if: ${{ !cancelled() }}
+    needs: browser-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install pinned Playwright report tooling
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm install --no-save --package-lock=false --ignore-scripts "@playwright/test@${PLAYWRIGHT_VERSION}"
+
+      - name: Download browser blob reports
+        uses: actions/download-artifact@v8
+        with:
+          pattern: playwright-blob-*
+          path: all-blob-reports
+          merge-multiple: true
+
+      - name: Merge Playwright reports
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report
+          PLAYWRIGHT_HTML_TITLE: PhotoVisa Browser E2E
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-summary.json
+        run: npx playwright merge-reports --reporter=html,json ./all-blob-reports
+
+      - name: Write browser summary
+        run: node scripts/playwright-report-summary.mjs playwright-summary.json playwright-summary.md playwright-summary.compact.json
+
+      - name: Upload unified Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-unified
+          path: |
+            playwright-report/
+            playwright-summary.json
+            playwright-summary.md
+            playwright-summary.compact.json
+          if-no-files-found: warn
           retention-days: 7
