@@ -96,14 +96,14 @@ async function waitForUiRendering(page) {
 }
 
 async function assertIphoneWebKitContext(page) {
-  const capabilities = await page.evaluate(() => ({
+  const context = await page.evaluate(() => ({
     userAgent: navigator.userAgent,
-    maxTouchPoints: navigator.maxTouchPoints,
-    coarsePointer: matchMedia('(pointer: coarse)').matches,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
   }));
-  expect(capabilities.userAgent).toContain('iPhone');
-  expect(capabilities.maxTouchPoints).toBeGreaterThan(0);
-  expect(capabilities.coarsePointer).toBe(true);
+  expect(context.userAgent).toContain('iPhone');
+  expect(context.viewportWidth).toBeLessThan(context.viewportHeight);
+  expect(context.viewportWidth).toBeLessThanOrEqual(430);
 }
 
 async function assertNoHorizontalOverflow(page) {
