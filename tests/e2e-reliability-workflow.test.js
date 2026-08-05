@@ -4,10 +4,17 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
-const [ciWorkflow, reliabilityWorkflow, playwrightConfig] = await Promise.all([
+const [
+  ciWorkflow,
+  reliabilityWorkflow,
+  playwrightConfig,
+  durationBudgetConfig,
+] = await Promise.all([
   readFile(`${repositoryRoot}.github/workflows/ci.yml`, 'utf8'),
   readFile(`${repositoryRoot}.github/workflows/e2e-reliability.yml`, 'utf8'),
   readFile(`${repositoryRoot}playwright.config.js`, 'utf8'),
+  readFile(`${repositoryRoot}config/playwright-duration-budgets.json`, 'utf8')
+    .then((content) => JSON.parse(content)),
 ]);
 
 test('reliability workflow schedules the nightly run and safe manual repeat choices', () => {
@@ -34,14 +41,48 @@ test('reliability matrix repeats exactly four representative projects', () => {
   assert.match(reliabilityWorkflow, /--repeat-each="\$REPEAT_EACH"/);
 });
 
-test('pull-request and nightly workflows enforce zero failed and zero flaky tests', () => {
+test('pull-request and nightly workflows enforce reliability and duration guardrails', () => {
   for (const workflow of [ciWorkflow, reliabilityWorkflow]) {
+    assert.match(workflow, /PLAYWRIGHT_DURATION_BUDGETS: config\/playwright-duration-budgets\.json/);
+    assert.match(workflow, /--duration-budgets="\$PLAYWRIGHT_DURATION_BUDGETS"/);
     assert.match(workflow, /--fail-on-flaky-tests/);
     assert.match(workflow, /--max-failed=0/);
     assert.match(workflow, /--max-flaky=0/);
     assert.match(workflow, /--require-complete/);
     assert.match(workflow, /--forbid-unmapped/);
     assert.match(workflow, /--forbid-unexpected/);
+  }
+});
+
+test('duration budget config covers every Playwright project with safe headroom', () => {
+  const expectedProjects = [
+    'chromium-desktop',
+    'chromium-mobile',
+    'cross-chromium',
+    'cross-firefox',
+    'cross-webkit',
+    'webkit-iphone-se',
+    'webkit-iphone-13',
+  ];
+
+  assert.equal(durationBudgetConfig.schemaVersion, 1);
+  assert.equal(durationBudgetConfig.warningRatio, 0.75);
+  assert.deepEqual(Object.keys(durationBudgetConfig.projects), expectedProjects);
+
+  for (const [projectName, budget] of Object.entries(durationBudgetConfig.projects)) {
+    assert.ok(budget.baselineAverageTestDurationMs > 0, `${projectName} baseline must be positive`);
+    assert.ok(
+      budget.maxAverageTestDurationMs > budget.baselineAverageTestDurationMs,
+      `${projectName} average budget must exceed the measured baseline`,
+    );
+    assert.ok(
+      budget.maxSingleTestDurationMs > budget.maxAverageTestDurationMs,
+      `${projectName} single-test budget must exceed the average budget`,
+    );
+    assert.ok(
+      budget.maxSingleTestDurationMs < 30_000,
+      `${projectName} single-test budget must remain below the Playwright timeout`,
+    );
   }
 });
 
