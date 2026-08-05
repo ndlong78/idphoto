@@ -120,6 +120,7 @@ test.beforeEach(async ({ page }) => {
 
 test('xuất tờ 10x15 gồm sáu ảnh Schengen đúng pixel và 300 DPI', async ({ page }) => {
   await page.locator('button[data-fmt="schengen"]').click();
+  await expect(page.locator('#size-badge')).toContainText('35 × 45 mm');
   await expect(page.locator('#print-sheet-summary')).toContainText('6/6 ảnh');
   await expect(page.locator('#print-sheet-summary')).toContainText('2 cột × 3 hàng');
   await expect(page.locator('#print-sheet-summary')).toContainText('35 × 45 mm mỗi ảnh');
