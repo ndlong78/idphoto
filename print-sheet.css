@@ -1,0 +1,119 @@
+.print-sheet-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-gold);
+  border-radius: 12px;
+  background: rgba(212, 175, 80, 0.045);
+}
+
+.print-sheet-panel h5 {
+  margin: 0;
+  color: var(--gold-l);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.print-sheet-help {
+  margin: 5px 0 10px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.print-sheet-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(72px, 0.7fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.print-sheet-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.print-sheet-field select {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 28px 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+}
+
+.print-sheet-field select:focus-visible,
+.print-sheet-button:focus-visible,
+.print-sheet-check input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.print-sheet-check {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.print-sheet-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--gold);
+}
+
+.print-sheet-summary {
+  margin: 9px 0;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.print-sheet-button {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid rgba(212, 175, 80, 0.48);
+  border-radius: 9px;
+  background: rgba(212, 175, 80, 0.12);
+  color: var(--gold-l);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.print-sheet-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(212, 175, 80, 0.18);
+}
+
+.print-sheet-button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+@media (max-width: 520px) {
+  .print-sheet-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .print-sheet-field select,
+  .print-sheet-check,
+  .print-sheet-button {
+    min-height: 42px;
+  }
+}
