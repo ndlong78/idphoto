@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "warningRatio": 0.75,
+  "baseline": {
+    "source": "PR #56 unified Playwright report",
+    "recordedAt": "2026-08-05",
+    "note": "Hard budgets include substantial shared-runner headroom and remain below the 30 second Playwright test timeout."
+  },
+  "projects": {
+    "chromium-desktop": {
+      "baselineAverageTestDurationMs": 1571,
+      "maxAverageTestDurationMs": 5000,
+      "maxSingleTestDurationMs": 10000
+    },
+    "chromium-mobile": {
+      "baselineAverageTestDurationMs": 2599,
+      "maxAverageTestDurationMs": 6000,
+      "maxSingleTestDurationMs": 12000
+    },
+    "cross-chromium": {
+      "baselineAverageTestDurationMs": 2776,
+      "maxAverageTestDurationMs": 6000,
+      "maxSingleTestDurationMs": 12000
+    },
+    "cross-firefox": {
+      "baselineAverageTestDurationMs": 3457,
+      "maxAverageTestDurationMs": 8000,
+      "maxSingleTestDurationMs": 15000
+    },
+    "cross-webkit": {
+      "baselineAverageTestDurationMs": 13153,
+      "maxAverageTestDurationMs": 22000,
+      "maxSingleTestDurationMs": 29000
+    },
+    "webkit-iphone-se": {
+      "baselineAverageTestDurationMs": 8845,
+      "maxAverageTestDurationMs": 18000,
+      "maxSingleTestDurationMs": 28000
+    },
+    "webkit-iphone-13": {
+      "baselineAverageTestDurationMs": 11998,
+      "maxAverageTestDurationMs": 20000,
+      "maxSingleTestDurationMs": 28000
+    }
+  }
+}
