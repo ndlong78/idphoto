@@ -77,5 +77,5 @@ test('incident automation uses Node 24 github-script and only runs for schedules
   assert.match(reliabilityWorkflow, /Manage scheduled reliability incident issue\n\s+if: \$\{\{ github\.event_name == 'schedule' \}\}/);
   assert.match(reliabilityWorkflow, /Automated nightly browser reliability incident/);
   assert.match(reliabilityWorkflow, /state_reason: 'completed'/);
-  assert.match(reliabilityWorkflow, /idphoto-e2e-reliability-run/);
+  assert.match(reliabilityWorkflow, /plan\.runMarker/);
 });
