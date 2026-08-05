@@ -57,6 +57,35 @@ A retry is diagnostic, not an acceptance rule. Browser commands use `--fail-on-f
 
 `scripts/playwright-report-summary.mjs` writes the Markdown and compact JSON results before returning a failing exit code. This means a red reliability check still leaves a readable workflow summary and downloadable evidence.
 
+## E2E duration budgets
+
+Pull-request CI and nightly reliability both load the single source of truth at `config/playwright-duration-budgets.json`.
+
+Each Playwright project has two hard limits:
+
+- `maxAverageTestDurationMs` — average cumulative Playwright duration per executed test;
+- `maxSingleTestDurationMs` — duration of the slowest executed test.
+
+The average is normalized by executed test count. A nightly run with `3`, `5` or `10` repetitions therefore uses the same budget without multiplying thresholds by `repeat-each`. Retry duration is included; a flaky retry already fails the separate zero-flaky guardrail.
+
+Budget states:
+
+- **passed** — both measurements remain below 75% of their hard limits;
+- **warning** — at least one measurement reaches 75% but does not exceed its hard limit;
+- **failed** — average or slowest-test duration exceeds its hard limit, or an expected project has no budget.
+
+Warnings remain non-blocking and appear in the unified Markdown/JSON report. A hard-budget violation is copied into reliability guardrails, fails the unified job and is available to nightly incident automation.
+
+The initial baselines were measured from the PR #56 unified report on 2026-08-05. Hard limits intentionally provide substantial shared-runner headroom while every single-test budget remains below the 30-second Playwright timeout.
+
+When changing a budget:
+
+1. Confirm the regression is expected and not caused by an unnecessary wait, retry or browser-specific slowdown.
+2. Compare several clean runs rather than one shared-runner sample.
+3. Update the measured baseline and hard limit together.
+4. Preserve meaningful headroom without moving a single-test budget to or above the test timeout.
+5. Include the reason and before/after measurements in the pull request.
+
 ## Failure and retry evidence
 
 On CI, Playwright uses `retain-on-failure-and-retries` for traces and videos. Successful first attempts do not retain those files. A failed attempt or retry does retain evidence, including a retry that later passes and is classified as flaky.
@@ -89,16 +118,16 @@ Blob artifacts use the prefix `playwright-blob-` and are retained for one day be
 1. downloads every `playwright-blob-*` artifact into one directory with `actions/download-artifact@v8`;
 2. runs `playwright merge-reports` to create one HTML report and one JSON report;
 3. runs `scripts/playwright-report-summary.mjs` to group results into Chromium, Firefox, WebKit desktop and iPhone WebKit;
-4. writes passed, flaky, failed, skipped, total and cumulative test time to the GitHub Actions job summary;
-5. enforces the zero-failed and zero-flaky guardrails;
+4. writes passed, flaky, failed, skipped, cumulative test time and per-project timing to the GitHub Actions job summary;
+5. enforces zero-failed, zero-flaky, complete-project and duration-budget guardrails;
 6. uploads `playwright-report-unified` for seven days.
 
 The unified artifact contains:
 
 - `playwright-report/` — merged interactive HTML report;
 - `playwright-summary.json` — Playwright's merged JSON output;
-- `playwright-summary.compact.json` — engine-group totals and guardrail results;
-- `playwright-summary.md` — the same table shown in the workflow summary.
+- `playwright-summary.compact.json` — engine-group totals, project timing, performance status and guardrail results;
+- `playwright-summary.md` — the same tables shown in the workflow summary.
 
 If a browser job fails before producing a blob report, the summary marks the corresponding Playwright projects as missing instead of reporting a false pass.
 
@@ -117,7 +146,7 @@ The default five-repeat run covers four critical upload-to-export journeys:
 
 At the default setting this produces 40 journey executions: four shards × two tests × five repetitions. Shards may run in parallel, but each shard remains at one Playwright worker.
 
-The nightly command also uses one retry and `--fail-on-flaky-tests`. Its unified summary expects exactly these four projects and applies the same zero-failed, zero-flaky, complete and mapped guardrails as pull-request CI.
+The nightly command also uses one retry and `--fail-on-flaky-tests`. Its unified summary expects exactly these four projects and applies the same reliability and duration budgets as pull-request CI.
 
 Nightly artifacts are retained longer for investigation:
 
@@ -132,18 +161,21 @@ Nightly artifacts are retained longer for investigation:
 `scripts/reliability-history.mjs` reads the current compact summary and the most recent official history artifact. It:
 
 1. converts the current run into `passed`, `failed` or `incomplete`;
-2. deduplicates the same workflow run and attempt;
-3. keeps the latest 30 scheduled runs;
-4. calculates the recent pass rate and current status streak;
-5. writes a 14-run Markdown trend table;
-6. creates a deterministic incident plan and issue body.
+2. stores performance status and highest duration-budget utilization;
+3. deduplicates the same workflow run and attempt;
+4. keeps the latest 30 scheduled runs;
+5. calculates recent pass rate, reliability streak, performance warning/failure counts and peak utilization;
+6. writes a 14-run Markdown trend table;
+7. creates a deterministic incident plan and issue body.
+
+History schema v2 remains backward-compatible with schema v1 artifacts. Older entries without performance data are normalized to `not-evaluated` instead of being discarded.
 
 If the unified compact JSON is missing or malformed, the current run is recorded as `incomplete`. Expected projects are listed as missing and the merge-job result is included as a violation. The observability job does not silently turn an infrastructure failure into a pass.
 
 Official scheduled history is uploaded as `playwright-reliability-history` for 90 days. It contains:
 
 - `reliability-history.json` — up to 30 normalized scheduled runs;
-- `reliability-trend.md` — the recent trend shown in the Actions summary;
+- `reliability-trend.md` — the recent reliability and performance trend shown in the Actions summary;
 - `reliability-incident-body.md` — the deterministic managed issue body;
 - `reliability-incident-plan.json` — the action and idempotency markers for issue automation.
 
@@ -155,7 +187,7 @@ Only scheduled runs manage the issue titled `[E2E Reliability] Nightly browser r
 
 Lifecycle:
 
-1. The first `failed` or `incomplete` scheduled run creates the issue.
+1. The first `failed` or `incomplete` scheduled run creates the issue, including duration-budget violations when present.
 2. Later failed runs update the same issue and add at most one comment per workflow run attempt.
 3. A closed incident is reopened if a later scheduled run fails.
 4. The first clean scheduled run updates the issue, adds one recovery comment and closes it as completed.
