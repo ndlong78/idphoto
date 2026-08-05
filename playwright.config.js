@@ -64,5 +64,19 @@ export default defineConfig({
         ...devices['Desktop Safari'],
       },
     },
+    {
+      name: 'webkit-iphone-se',
+      testMatch: /.*\.iphone\.spec\.js/,
+      use: {
+        ...devices['iPhone SE'],
+      },
+    },
+    {
+      name: 'webkit-iphone-13',
+      testMatch: /.*\.iphone\.spec\.js/,
+      use: {
+        ...devices['iPhone 13'],
+      },
+    },
   ],
 });
