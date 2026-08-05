@@ -106,9 +106,12 @@ npm run test:e2e:journey
 
 # Chỉ chạy validation, cancel confirmation và reset lifecycle
 npm run test:e2e:validation
+
+# Chỉ chạy hành trình upload → touch crop/pinch → export trên Pixel 7
+npm run test:e2e:mobile-journey
 ```
 
-Bộ E2E dùng `scripts/static-server.mjs`, không gọi AI/CDN và kiểm tra download event thật, nội dung ZIP, receipt cùng recovery controls. Hành trình đầy đủ tạo PNG fixture ngay trong Chromium, đưa file qua input upload thật, chạy `FileReader`, canvas editor, compliance/readiness, dialog xác nhận, renderer, metadata DPI và delivery layer trước khi đọc lại file tải xuống. Nhóm validation/reset kiểm tra file sai định dạng, file quá lớn, hủy dialog không tạo download, file lỗi không phá phiên hiện tại và mọi đường chọn ảnh mới đều xóa receipt, recovery cùng staged ZIP của ảnh trước. Report local nằm trong `playwright-report/`; trace, screenshot và video chỉ được giữ khi test thất bại.
+Bộ E2E dùng `scripts/static-server.mjs`, không gọi AI/CDN và kiểm tra download event thật, nội dung ZIP, receipt cùng recovery controls. Hành trình đầy đủ tạo PNG fixture ngay trong Chromium, đưa file qua input upload thật, chạy `FileReader`, canvas editor, compliance/readiness, dialog xác nhận, renderer, metadata DPI và delivery layer trước khi đọc lại file tải xuống. Nhóm validation/reset kiểm tra file sai định dạng, file quá lớn, hủy dialog không tạo download, file lỗi không phá phiên hiện tại và mọi đường chọn ảnh mới đều xóa receipt, recovery cùng staged ZIP của ảnh trước. Journey mobile chạy bằng Pixel 7 emulation, gửi touch input một ngón và hai ngón vào crop canvas, xác nhận layout/dialog/receipt không tràn viewport, rồi đọc lại JPG hoặc ZIP/PNG để kiểm tra kích thước pixel, metadata DPI, audit và privacy flags. Report local nằm trong `playwright-report/`; trace, screenshot và video chỉ được giữ khi test thất bại.
 
 ## Yêu cầu mạng
 
