@@ -43,21 +43,24 @@ test('10x15 xếp hai ảnh vuông US Visa 51x51', () => {
     photoHeightMm: 51,
   });
 
+  assert.equal(layout.orientation, 'portrait');
   assert.equal(layout.capacity, 2);
   assert.equal(layout.copies, 2);
 });
 
-test('A4 xếp tối đa mười sáu ảnh hộ chiếu 40x60', () => {
+test('A4 tự xoay ngang để xếp tối đa mười tám ảnh hộ chiếu 40x60', () => {
   const layout = computePrintSheetLayout({
     paperKey: 'a4',
     photoWidthMm: 40,
     photoHeightMm: 60,
   });
 
-  assert.equal(layout.orientation, 'portrait');
-  assert.equal(layout.columns, 4);
-  assert.equal(layout.rows, 4);
-  assert.equal(layout.capacity, 16);
+  assert.equal(layout.orientation, 'landscape');
+  assert.equal(layout.paperWidthMm, 297);
+  assert.equal(layout.paperHeightMm, 210);
+  assert.equal(layout.columns, 6);
+  assert.equal(layout.rows, 3);
+  assert.equal(layout.capacity, 18);
   assert.equal(layout.marginMm, PRINT_SHEET_PAPERS.a4.defaultMarginMm);
 });
 
