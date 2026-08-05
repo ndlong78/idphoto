@@ -10,7 +10,7 @@ const FACE_STUB = `
 export async function detectFacesWithLandmarks() { return null; }
 `;
 
-async function installOfflineProcessingStubs(page) {
+async function installOfflineStubs(page) {
   await page.route('**/src/ai.js', (route) => route.fulfill({
     status: 200,
     contentType: 'text/javascript; charset=utf-8',
@@ -24,7 +24,7 @@ async function installOfflineProcessingStubs(page) {
   await page.route(/^https:\/\//, (route) => route.abort());
 }
 
-async function uploadGeneratedPortrait(page, filename = 'rotation-source.png') {
+async function uploadPortrait(page, filename = 'rotation-source.png') {
   await page.locator('#file-input').evaluate(async (input, uploadName) => {
     const canvas = document.createElement('canvas');
     canvas.width = 300;
@@ -37,7 +37,6 @@ async function uploadGeneratedPortrait(page, filename = 'rotation-source.png') {
     gradient.addColorStop(1, '#f8fafc');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-
     ctx.fillStyle = '#1e3a5f';
     ctx.fillRect(64, 310, 172, 140);
     ctx.fillStyle = '#f2c9a5';
@@ -54,18 +53,15 @@ async function uploadGeneratedPortrait(page, filename = 'rotation-source.png') {
     ctx.arc(176, 188, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    const blob = await new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (value) => value ? resolve(value) : reject(new Error('Không tạo được PNG fixture.')),
-        'image/png',
-      );
-    });
-    const file = new File([blob], uploadName, {
+    const blob = await new Promise((resolve, reject) => canvas.toBlob(
+      (value) => value ? resolve(value) : reject(new Error('Không tạo được PNG fixture.')),
+      'image/png',
+    ));
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([blob], uploadName, {
       type: 'image/png',
       lastModified: 1_786_000_000_000,
-    });
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
+    }));
     input.files = transfer.files;
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }, filename);
@@ -89,97 +85,41 @@ async function assertNoHorizontalOverflow(page) {
   expect(geometry.bodyScrollWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1);
 }
 
-async function getPanelGeometry(page) {
+async function panelBoxes(page) {
   return page.locator('.panel-card').evaluateAll((elements) => elements.map((element) => {
     const box = element.getBoundingClientRect();
-    return {
-      x: box.x,
-      y: box.y,
-      width: box.width,
-      right: box.right,
-    };
+    return { x: box.x, y: box.y, width: box.width, right: box.right };
   }));
 }
 
-async function assertPanelsStacked(page) {
-  const panels = await getPanelGeometry(page);
+async function assertStacked(page) {
+  const panels = await panelBoxes(page);
+  const viewportWidth = await page.evaluate(() => window.innerWidth);
   expect(panels).toHaveLength(2);
   expect(panels[1].y).toBeGreaterThan(panels[0].y + 100);
-  expect(panels.every((panel) => panel.x >= 0 && panel.right <= windowInnerWidth(page) + 1)).toBe(true);
-}
-
-async function windowInnerWidth(page) {
-  return page.evaluate(() => window.innerWidth);
-}
-
-async function assertPanelsSideBySide(page) {
-  const panels = await getPanelGeometry(page);
-  expect(panels).toHaveLength(2);
-  expect(Math.abs(panels[1].y - panels[0].y)).toBeLessThanOrEqual(4);
-  expect(panels[1].x).toBeGreaterThan(panels[0].x + panels[0].width);
-  const viewportWidth = await windowInnerWidth(page);
   expect(panels.every((panel) => panel.x >= 0 && panel.right <= viewportWidth + 1)).toBe(true);
 }
 
-async function getSessionSnapshot(page) {
+async function assertSideBySide(page) {
+  const panels = await panelBoxes(page);
+  const viewportWidth = await page.evaluate(() => window.innerWidth);
+  expect(panels).toHaveLength(2);
+  expect(Math.abs(panels[1].y - panels[0].y)).toBeLessThanOrEqual(4);
+  expect(panels[1].x).toBeGreaterThan(panels[0].x + panels[0].width);
+  expect(panels.every((panel) => panel.x >= 0 && panel.right <= viewportWidth + 1)).toBe(true);
+}
+
+async function sessionSnapshot(page) {
   return page.evaluate(async () => {
     const { manualReviewStore } = await import('/src/manual-review.js');
     const { state } = await import('/src/state.js');
     return {
       formatKey: state.curFmt,
-      crop: {
-        x: state.crop.x,
-        y: state.crop.y,
-        scale: state.crop.scale,
-      },
-      canvasState: {
-        width: state.cW,
-        height: state.cH,
-      },
+      crop: { x: state.crop.x, y: state.crop.y, scale: state.crop.scale },
       completedKeys: [...manualReviewStore.getCompletedKeys(state.origFile, state.curFmt)].sort(),
       auditEnabled: manualReviewStore.isAuditEnabled(state.origFile),
     };
   });
-}
-
-async function performTouchAdjustment(page) {
-  const canvas = page.locator('#crop-canvas');
-  await canvas.scrollIntoViewIfNeeded();
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error('Không xác định được crop canvas.');
-
-  const centerX = box.x + box.width / 2;
-  const centerY = box.y + box.height / 2;
-  const point = (x, y, id) => ({ x, y, id, radiusX: 6, radiusY: 6, force: 1 });
-  const client = await page.context().newCDPSession(page);
-
-  await client.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [point(centerX, centerY, 1)],
-  });
-  await client.send('Input.dispatchTouchEvent', {
-    type: 'touchMove',
-    touchPoints: [point(centerX + 28, centerY - 18, 1)],
-  });
-  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-
-  await client.send('Input.dispatchTouchEvent', {
-    type: 'touchStart',
-    touchPoints: [
-      point(centerX - 28, centerY, 1),
-      point(centerX + 28, centerY, 2),
-    ],
-  });
-  await client.send('Input.dispatchTouchEvent', {
-    type: 'touchMove',
-    touchPoints: [
-      point(centerX - 46, centerY, 1),
-      point(centerX + 46, centerY, 2),
-    ],
-  });
-  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await client.detach();
-  await page.waitForTimeout(220);
 }
 
 function expectSessionPreserved(actual, expected) {
@@ -191,34 +131,66 @@ function expectSessionPreserved(actual, expected) {
   expect(actual.crop.scale).toBeCloseTo(expected.crop.scale, 8);
 }
 
+async function performTouchAdjustment(page) {
+  const canvas = page.locator('#crop-canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Không xác định được crop canvas.');
+
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const point = (px, py, id) => ({ x: px, y: py, id, radiusX: 6, radiusY: 6, force: 1 });
+  const client = await page.context().newCDPSession(page);
+
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [point(x, y, 1)],
+  });
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [point(x + 28, y - 18, 1)],
+  });
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [point(x - 28, y, 1), point(x + 28, y, 2)],
+  });
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [point(x - 46, y, 1), point(x + 46, y, 2)],
+  });
+  await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await client.detach();
+  await page.waitForTimeout(220);
+}
+
 async function assertCropCanvasInsidePanel(page) {
   const geometry = await page.locator('#crop-canvas').evaluate((canvas) => {
-    const canvasBox = canvas.getBoundingClientRect();
-    const panelBox = canvas.closest('.panel-card')?.getBoundingClientRect();
+    const box = canvas.getBoundingClientRect();
+    const panel = canvas.closest('.panel-card')?.getBoundingClientRect();
     return {
-      canvasLeft: canvasBox.left,
-      canvasRight: canvasBox.right,
-      canvasWidth: canvasBox.width,
-      panelLeft: panelBox?.left ?? 0,
-      panelRight: panelBox?.right ?? 0,
-      panelWidth: panelBox?.width ?? 0,
+      left: box.left,
+      right: box.right,
+      width: box.width,
+      panelLeft: panel?.left ?? 0,
+      panelRight: panel?.right ?? 0,
+      panelWidth: panel?.width ?? 0,
       viewportWidth: window.innerWidth,
     };
   });
-  expect(geometry.canvasLeft).toBeGreaterThanOrEqual(geometry.panelLeft - 1);
-  expect(geometry.canvasRight).toBeLessThanOrEqual(geometry.panelRight + 1);
-  expect(geometry.canvasWidth).toBeLessThanOrEqual(geometry.panelWidth + 1);
-  expect(geometry.canvasRight).toBeLessThanOrEqual(geometry.viewportWidth + 1);
+  expect(geometry.left).toBeGreaterThanOrEqual(geometry.panelLeft - 1);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.panelRight + 1);
+  expect(geometry.width).toBeLessThanOrEqual(geometry.panelWidth + 1);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth + 1);
 }
 
 async function assertCompactDialog(page) {
   const dialog = page.locator('#export-readiness-dialog');
   await expect(dialog).toBeVisible();
-  await page.waitForFunction(() => (
-    [...document.styleSheets].some((sheet) => (
-      sheet.href?.endsWith('/export-readiness.css') && sheet.cssRules.length > 0
-    ))
-  ));
+  await page.waitForFunction(() => [...document.styleSheets].some((sheet) => (
+    sheet.href?.endsWith('/export-readiness.css') && sheet.cssRules.length > 0
+  )));
 
   const geometry = await dialog.evaluate((element) => {
     const box = element.getBoundingClientRect();
@@ -228,8 +200,6 @@ async function assertCompactDialog(page) {
       bottom: box.bottom,
       left: box.left,
       right: box.right,
-      width: box.width,
-      height: box.height,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
       cardClientHeight: card?.clientHeight ?? 0,
@@ -238,7 +208,6 @@ async function assertCompactDialog(page) {
       cardScrollWidth: card?.scrollWidth ?? 0,
     };
   });
-
   expect(geometry.left).toBeGreaterThanOrEqual(0);
   expect(geometry.right).toBeLessThanOrEqual(geometry.viewportWidth + 1);
   expect(geometry.top).toBeGreaterThanOrEqual(0);
@@ -263,15 +232,15 @@ async function assertCompactDialog(page) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await installOfflineProcessingStubs(page);
+  await installOfflineStubs(page);
 });
 
 test('portrait → landscape → portrait giữ nguyên crop và review state', async ({ page }) => {
   await page.setViewportSize({ width: 412, height: 915 });
   await page.goto('/');
-  await uploadGeneratedPortrait(page);
+  await uploadPortrait(page);
   await waitForEditor(page);
-  await assertPanelsStacked(page);
+  await assertStacked(page);
 
   await page.locator('button[data-fmt="cccd"]').scrollIntoViewIfNeeded();
   await page.locator('button[data-fmt="cccd"]').click();
@@ -281,53 +250,53 @@ test('portrait → landscape → portrait giữ nguyên crop và review state', 
   await page.locator('#manual-review-audit-enabled').check();
   await performTouchAdjustment(page);
 
-  const portraitSnapshot = await getSessionSnapshot(page);
-  expect(portraitSnapshot.formatKey).toBe('cccd');
-  expect(portraitSnapshot.auditEnabled).toBe(true);
-  expect(portraitSnapshot.completedKeys.length).toBeGreaterThan(0);
+  const portrait = await sessionSnapshot(page);
+  expect(portrait.formatKey).toBe('cccd');
+  expect(portrait.auditEnabled).toBe(true);
+  expect(portrait.completedKeys.length).toBeGreaterThan(0);
 
   await page.setViewportSize({ width: 915, height: 412 });
   await page.waitForFunction(() => matchMedia('(orientation: landscape)').matches);
   await page.waitForTimeout(120);
-  await assertPanelsSideBySide(page);
+  await assertSideBySide(page);
   await assertCropCanvasInsidePanel(page);
   await assertNoHorizontalOverflow(page);
-  expectSessionPreserved(await getSessionSnapshot(page), portraitSnapshot);
+  expectSessionPreserved(await sessionSnapshot(page), portrait);
 
   await page.setViewportSize({ width: 412, height: 915 });
   await page.waitForFunction(() => matchMedia('(orientation: portrait)').matches);
   await page.waitForTimeout(120);
-  await assertPanelsStacked(page);
+  await assertStacked(page);
   await assertCropCanvasInsidePanel(page);
   await assertNoHorizontalOverflow(page);
-  expectSessionPreserved(await getSessionSnapshot(page), portraitSnapshot);
+  expectSessionPreserved(await sessionSnapshot(page), portrait);
 
   await page.locator('#btn-jpg-300').scrollIntoViewIfNeeded();
   await page.locator('#btn-jpg-300').click();
   await expect(page.locator('#export-readiness-dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Quay lại chỉnh sửa' }).click();
   await expect(page.locator('#export-readiness-dialog')).toBeHidden();
-  expectSessionPreserved(await getSessionSnapshot(page), portraitSnapshot);
+  expectSessionPreserved(await sessionSnapshot(page), portrait);
 });
 
 test('viewport 320px và chiều cao bị thu hẹp vẫn mở dialog và tải được ảnh', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/');
-  await uploadGeneratedPortrait(page, 'small-screen-source.png');
+  await uploadPortrait(page, 'small-screen-source.png');
   await waitForEditor(page);
-  await assertPanelsStacked(page);
+  await assertStacked(page);
   await assertCropCanvasInsidePanel(page);
   await assertNoHorizontalOverflow(page);
 
   await page.locator('button[data-fmt="cccd"]').scrollIntoViewIfNeeded();
   await page.locator('button[data-fmt="cccd"]').click();
-  const beforeShrink = await getSessionSnapshot(page);
+  const beforeShrink = await sessionSnapshot(page);
 
   // Mô phỏng visual viewport bị bàn phím ảo chiếm chỗ bằng cách giảm chiều cao.
   await page.setViewportSize({ width: 320, height: 360 });
   await page.waitForTimeout(120);
   await assertNoHorizontalOverflow(page);
-  expectSessionPreserved(await getSessionSnapshot(page), beforeShrink);
+  expectSessionPreserved(await sessionSnapshot(page), beforeShrink);
 
   await page.locator('#btn-jpg-300').scrollIntoViewIfNeeded();
   await page.locator('#btn-jpg-300').click();
