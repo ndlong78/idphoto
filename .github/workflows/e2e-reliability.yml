@@ -1,0 +1,181 @@
+name: E2E Reliability
+
+on:
+  schedule:
+    - cron: '17 18 * * *'
+  workflow_dispatch:
+    inputs:
+      repeat_each:
+        description: Number of times to repeat each critical journey
+        required: true
+        default: '5'
+        type: choice
+        options:
+          - '3'
+          - '5'
+          - '10'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+  PLAYWRIGHT_VERSION: '1.61.1'
+  REPEAT_EACH: ${{ github.event_name == 'workflow_dispatch' && inputs.repeat_each || '5' }}
+  EXPECTED_PROJECTS: chromium-desktop,cross-firefox,cross-webkit,webkit-iphone-13
+
+jobs:
+  reliability-e2e:
+    name: Reliability / ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - id: chromium
+            label: Chromium desktop
+            browser: chromium
+            project: '--project=chromium-desktop'
+            spec: e2e/upload-export-journey.desktop.spec.js
+          - id: firefox
+            label: Firefox
+            browser: firefox
+            project: '--project=cross-firefox'
+            spec: e2e/cross-browser-export.cross.spec.js
+          - id: webkit
+            label: WebKit desktop
+            browser: webkit
+            project: '--project=cross-webkit'
+            spec: e2e/cross-browser-export.cross.spec.js
+          - id: iphone-webkit
+            label: iPhone 13 WebKit
+            browser: webkit
+            project: '--project=webkit-iphone-13'
+            spec: e2e/iphone-webkit-upload-export.iphone.spec.js
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install pinned Playwright test runner
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm install --no-save --package-lock=false --ignore-scripts "@playwright/test@${PLAYWRIGHT_VERSION}"
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps "${{ matrix.browser }}"
+
+      - name: Validate repeat count
+        run: |
+          if ! [[ "$REPEAT_EACH" =~ ^(3|5|10)$ ]]; then
+            echo "Unsupported repeat count: $REPEAT_EACH" >&2
+            exit 1
+          fi
+
+      - name: Repeat critical upload and export journey
+        run: >-
+          npx playwright test
+          "${{ matrix.spec }}"
+          ${{ matrix.project }}
+          --repeat-each="$REPEAT_EACH"
+          --fail-on-flaky-tests
+
+      - name: Upload reliability shard report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-reliability-report-${{ matrix.id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload reliability blob report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-reliability-blob-${{ matrix.id }}
+          path: blob-report/
+          if-no-files-found: warn
+          retention-days: 2
+
+  merge-reliability-reports:
+    name: Reliability / Unified report
+    if: ${{ !cancelled() }}
+    needs: reliability-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install pinned Playwright report tooling
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm install --no-save --package-lock=false --ignore-scripts "@playwright/test@${PLAYWRIGHT_VERSION}"
+
+      - name: Download reliability blob reports
+        uses: actions/download-artifact@v8
+        with:
+          pattern: playwright-reliability-blob-*
+          path: all-reliability-blob-reports
+          merge-multiple: true
+
+      - name: Merge reliability reports
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-reliability-report
+          PLAYWRIGHT_HTML_TITLE: PhotoVisa E2E Reliability
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-reliability-summary.json
+        run: npx playwright merge-reports --reporter=html,json ./all-reliability-blob-reports
+
+      - name: Write reliability summary and enforce guardrails
+        env:
+          PLAYWRIGHT_SUMMARY_TITLE: Nightly E2E reliability summary
+          PLAYWRIGHT_SUMMARY_NOTE: Each selected upload and export journey ran ${{ env.REPEAT_EACH }} times with one retry allowed and one worker per shard.
+        run: >-
+          node scripts/playwright-report-summary.mjs
+          playwright-reliability-summary.json
+          playwright-reliability-summary.md
+          playwright-reliability-summary.compact.json
+          --expected-projects="$EXPECTED_PROJECTS"
+          --max-failed=0
+          --max-flaky=0
+          --require-complete
+          --forbid-unmapped
+          --forbid-unexpected
+
+      - name: Upload unified reliability report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-reliability-report-unified
+          path: |
+            playwright-reliability-report/
+            playwright-reliability-summary.json
+            playwright-reliability-summary.md
+            playwright-reliability-summary.compact.json
+          if-no-files-found: warn
+          retention-days: 14
