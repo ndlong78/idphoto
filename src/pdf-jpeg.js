@@ -35,6 +35,13 @@ function asJpegBytes(value) {
   return bytes;
 }
 
+function normalizeImageId(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new TypeError('ID ảnh PDF phải là chuỗi không rỗng.');
+  }
+  return value.trim();
+}
+
 function encodeAscii(value) {
   return new TextEncoder().encode(String(value));
 }
@@ -63,53 +70,46 @@ function objectBytes(objectNumber, bodyParts) {
 }
 
 function streamObjectBytes(objectNumber, dictionary, streamBytes) {
+  const prefix = dictionary ? `${dictionary} ` : '';
   return objectBytes(objectNumber, [
-    encodeAscii(`<< ${dictionary} /Length ${streamBytes.length} >>\nstream\n`),
+    encodeAscii(`<< ${prefix}/Length ${streamBytes.length} >>\nstream\n`),
     streamBytes,
     encodeAscii('\nendstream'),
   ]);
 }
 
-export function millimetersToPdfPoints(millimeters) {
-  return (positiveNumber(millimeters, 'Kích thước millimeter') / MILLIMETERS_PER_INCH)
-    * POINTS_PER_INCH;
+function normalizeImages(images) {
+  if (!Array.isArray(images) || images.length === 0) {
+    throw new TypeError('PDF phải có ít nhất một ảnh JPEG.');
+  }
+  const ids = new Set();
+  return images.map((image, index) => {
+    const id = normalizeImageId(image?.id ?? `image-${index + 1}`);
+    if (ids.has(id)) throw new RangeError(`ID ảnh PDF bị trùng: ${id}`);
+    ids.add(id);
+    return Object.freeze({
+      id,
+      jpegBytes: asJpegBytes(image?.jpegBytes),
+      imageWidthPx: positiveInteger(image?.imageWidthPx, 'Chiều rộng ảnh'),
+      imageHeightPx: positiveInteger(image?.imageHeightPx, 'Chiều cao ảnh'),
+    });
+  });
 }
 
-export function createSinglePageJpegPdf({
-  jpegBytes,
-  imageWidthPx,
-  imageHeightPx,
-  pageWidthMm,
-  pageHeightMm,
-} = {}) {
-  const image = asJpegBytes(jpegBytes);
-  const widthPx = positiveInteger(imageWidthPx, 'Chiều rộng ảnh');
-  const heightPx = positiveInteger(imageHeightPx, 'Chiều cao ảnh');
-  const pageWidthPt = millimetersToPdfPoints(pageWidthMm);
-  const pageHeightPt = millimetersToPdfPoints(pageHeightMm);
-  const widthToken = formatPdfNumber(pageWidthPt);
-  const heightToken = formatPdfNumber(pageHeightPt);
+function normalizePages(pages, imageIds) {
+  if (!Array.isArray(pages) || pages.length === 0) {
+    throw new TypeError('PDF phải có ít nhất một trang.');
+  }
+  return pages.map((page) => {
+    const imageId = normalizeImageId(page?.imageId);
+    if (!imageIds.has(imageId)) {
+      throw new RangeError(`Trang PDF tham chiếu ảnh không tồn tại: ${imageId}`);
+    }
+    return Object.freeze({ imageId });
+  });
+}
 
-  const contentStream = encodeAscii(
-    `q\n${widthToken} 0 0 ${heightToken} 0 0 cm\n/Im0 Do\nQ\n`,
-  );
-  const objects = [
-    objectBytes(1, [encodeAscii('<< /Type /Catalog /Pages 2 0 R >>')]),
-    objectBytes(2, [encodeAscii('<< /Type /Pages /Kids [3 0 R] /Count 1 >>')]),
-    objectBytes(3, [encodeAscii(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${widthToken} ${heightToken}] `
-      + '/Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 5 0 R >> >> '
-      + '/Contents 4 0 R >>',
-    )]),
-    streamObjectBytes(4, '', contentStream),
-    streamObjectBytes(
-      5,
-      `/Type /XObject /Subtype /Image /Width ${widthPx} /Height ${heightPx} `
-      + '/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode',
-      image,
-    ),
-  ];
-
+function assemblePdf(objects) {
   const offsets = [0];
   let cursor = PDF_HEADER.length;
   for (const object of objects) {
@@ -133,14 +133,96 @@ export function createSinglePageJpegPdf({
     '',
   ].join('\n'));
 
-  return Object.freeze({
+  return {
     bytes: concatenateBytes([PDF_HEADER, ...objects, trailer]),
-    pageWidthPt,
-    pageHeightPt,
-    imageWidthPx: widthPx,
-    imageHeightPx: heightPx,
     objectOffsets: Object.freeze(offsets.slice(1)),
     xrefOffset,
+  };
+}
+
+export function millimetersToPdfPoints(millimeters) {
+  return (positiveNumber(millimeters, 'Kích thước millimeter') / MILLIMETERS_PER_INCH)
+    * POINTS_PER_INCH;
+}
+
+export function createMultiPageJpegPdf({
+  images,
+  pages,
+  pageWidthMm,
+  pageHeightMm,
+} = {}) {
+  const normalizedImages = normalizeImages(images);
+  const imageIds = new Set(normalizedImages.map((image) => image.id));
+  const normalizedPages = normalizePages(pages, imageIds);
+  const pageWidthPt = millimetersToPdfPoints(pageWidthMm);
+  const pageHeightPt = millimetersToPdfPoints(pageHeightMm);
+  const widthToken = formatPdfNumber(pageWidthPt);
+  const heightToken = formatPdfNumber(pageHeightPt);
+  const pageCount = normalizedPages.length;
+  const contentObjectNumber = 3 + pageCount;
+  const firstImageObjectNumber = contentObjectNumber + 1;
+  const imageObjectNumbers = new Map(normalizedImages.map((image, index) => [
+    image.id,
+    firstImageObjectNumber + index,
+  ]));
+  const pageObjectNumbers = normalizedPages.map((_, index) => 3 + index);
+
+  const contentStream = encodeAscii(
+    `q\n${widthToken} 0 0 ${heightToken} 0 0 cm\n/Im0 Do\nQ\n`,
+  );
+  const kids = pageObjectNumbers.map((number) => `${number} 0 R`).join(' ');
+  const objects = [
+    objectBytes(1, [encodeAscii('<< /Type /Catalog /Pages 2 0 R >>')]),
+    objectBytes(2, [encodeAscii(`<< /Type /Pages /Kids [${kids}] /Count ${pageCount} >>`)]),
+    ...normalizedPages.map((page, index) => objectBytes(pageObjectNumbers[index], [encodeAscii(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${widthToken} ${heightToken}] `
+      + `/Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 ${imageObjectNumbers.get(page.imageId)} 0 R >> >> `
+      + `/Contents ${contentObjectNumber} 0 R >>`,
+    )])),
+    streamObjectBytes(contentObjectNumber, '', contentStream),
+    ...normalizedImages.map((image) => streamObjectBytes(
+      imageObjectNumbers.get(image.id),
+      `/Type /XObject /Subtype /Image /Width ${image.imageWidthPx} /Height ${image.imageHeightPx} `
+      + '/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode',
+      image.jpegBytes,
+    )),
+  ];
+  const assembled = assemblePdf(objects);
+
+  return Object.freeze({
+    ...assembled,
+    pageWidthPt,
+    pageHeightPt,
+    pageCount,
+    uniqueImageCount: normalizedImages.length,
+    pageObjectNumbers: Object.freeze(pageObjectNumbers),
+    contentObjectNumber,
+    imageObjectNumbers: Object.freeze(Object.fromEntries(imageObjectNumbers)),
+  });
+}
+
+export function createSinglePageJpegPdf({
+  jpegBytes,
+  imageWidthPx,
+  imageHeightPx,
+  pageWidthMm,
+  pageHeightMm,
+} = {}) {
+  const result = createMultiPageJpegPdf({
+    images: [{
+      id: 'single-page-image',
+      jpegBytes,
+      imageWidthPx,
+      imageHeightPx,
+    }],
+    pages: [{ imageId: 'single-page-image' }],
+    pageWidthMm,
+    pageHeightMm,
+  });
+  return Object.freeze({
+    ...result,
+    imageWidthPx: positiveInteger(imageWidthPx, 'Chiều rộng ảnh'),
+    imageHeightPx: positiveInteger(imageHeightPx, 'Chiều cao ảnh'),
   });
 }
 
