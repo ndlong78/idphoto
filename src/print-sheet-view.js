@@ -69,7 +69,7 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
     panel,
     'p',
     'print-sheet-help',
-    'Xếp nhiều bản đúng kích thước lên giấy 10 × 15 cm hoặc A4, xuất JPEG 300 DPI.',
+    'Xếp nhiều bản đúng kích thước lên giấy 10 × 15 cm hoặc A4. Tải JPEG 300 DPI hoặc PDF đúng khổ giấy.',
   );
 
   const controls = doc.createElement('div');
@@ -112,9 +112,18 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
   summary.id = 'print-sheet-summary';
   summary.setAttribute('aria-live', 'polite');
 
-  const button = appendText(doc, panel, 'button', 'print-sheet-button', 'Tải tờ in 300 DPI');
-  button.type = 'button';
-  button.id = 'btn-print-sheet';
+  const actions = doc.createElement('div');
+  actions.className = 'print-sheet-actions';
+  panel.appendChild(actions);
+
+  const jpegButton = appendText(doc, actions, 'button', 'print-sheet-button', 'Tải JPEG 300 DPI');
+  jpegButton.type = 'button';
+  jpegButton.id = 'btn-print-sheet';
+
+  const pdfButton = appendText(doc, actions, 'button', 'print-sheet-button is-secondary', 'Tải PDF đúng khổ');
+  pdfButton.type = 'button';
+  pdfButton.id = 'btn-print-sheet-pdf';
+  pdfButton.title = 'Khi in PDF, chọn Actual size hoặc 100% để giữ đúng kích thước.';
 
   actionGroup.insertAdjacentElement('afterend', panel);
   return panel;
@@ -200,12 +209,20 @@ export function refreshPrintSheetPanel(doc = globalThis.document, {
   return { options, layout: selectedLayout };
 }
 
+function setExportBusy(panel, buttons, busy) {
+  panel.setAttribute('aria-busy', busy ? 'true' : 'false');
+  for (const button of buttons) {
+    if (button) button.disabled = busy;
+  }
+}
+
 let activeController = null;
 let activeUiObserver = null;
 
 export function startPrintSheetView({
   documentRef = globalThis.document,
   onExport = async () => {},
+  onExportPdf = async () => {},
 } = {}) {
   const panel = ensurePrintSheetPanel(documentRef);
   if (!panel) return () => {};
@@ -223,9 +240,6 @@ export function startPrintSheetView({
   documentRef.getElementById('print-sheet-copies')?.addEventListener('change', () => refresh(), { signal });
   documentRef.getElementById('print-sheet-gap')?.addEventListener('change', () => refresh(), { signal });
 
-  // Event delegation survives any future replacement of preset buttons. The
-  // microtask remains a harmless fallback, while the size badge observer below
-  // is the authoritative signal that ui.js committed the new preset.
   documentRef.addEventListener('click', (event) => {
     if (!event.target?.closest?.('.fbtn')) return;
     scheduleMicrotask(() => refresh());
@@ -252,20 +266,25 @@ export function startPrintSheetView({
     }
   }
 
-  const exportButton = documentRef.getElementById('btn-print-sheet');
-  exportButton?.addEventListener('click', async () => {
-    if (exportButton.disabled) return;
-    const current = refresh();
-    if (!current) return;
-    exportButton.disabled = true;
-    panel.setAttribute('aria-busy', 'true');
-    try {
-      await onExport(current.options, current.layout);
-    } finally {
-      exportButton.disabled = false;
-      panel.setAttribute('aria-busy', 'false');
-    }
-  }, { signal });
+  const jpegButton = documentRef.getElementById('btn-print-sheet');
+  const pdfButton = documentRef.getElementById('btn-print-sheet-pdf');
+  const buttons = [jpegButton, pdfButton].filter(Boolean);
+
+  const bindExport = (button, callback) => {
+    button?.addEventListener('click', async () => {
+      if (button.disabled) return;
+      const current = refresh();
+      if (!current) return;
+      setExportBusy(panel, buttons, true);
+      try {
+        await callback(current.options, current.layout);
+      } finally {
+        setExportBusy(panel, buttons, false);
+      }
+    }, { signal });
+  };
+  bindExport(jpegButton, onExport);
+  bindExport(pdfButton, onExportPdf);
 
   return () => {
     activeController?.abort();
