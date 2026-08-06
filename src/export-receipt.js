@@ -1,5 +1,6 @@
 const DELIVERY_TYPES = new Set([
   'image',
+  'print-sheet',
   'bundle-zip',
   'audit-json',
   'image-fallback',
