@@ -169,6 +169,6 @@ test('filename tờ in chứa khổ giấy, preset, số bản, pixel và DPI', 
       heightPx: 1772,
       dpi: 300,
     }),
-    'photovisar_sheet_photo-10x15_schengen_6copies_1181x1772_300dpi.jpeg'.replace('photovisar', 'photovisar'),
+    'photovisa_sheet_photo-10x15_schengen_6copies_1181x1772_300dpi.jpeg',
   );
 });
