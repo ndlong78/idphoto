@@ -82,6 +82,54 @@
   line-height: 1.5;
 }
 
+.print-sheet-preview {
+  margin: 0 0 10px;
+}
+
+.print-sheet-preview-stage {
+  display: flex;
+  min-height: 190px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.025) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.025) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.025) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.025) 75%),
+    var(--card2);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.print-sheet-preview-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid rgba(20, 27, 39, 0.2);
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+.print-sheet-preview-status {
+  margin: 6px 0 0;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.print-sheet-preview-caption {
+  margin-top: 6px;
+  color: var(--dim);
+  font-size: 9px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .print-sheet-button {
   width: 100%;
   min-height: 40px;
@@ -115,5 +163,10 @@
   .print-sheet-check,
   .print-sheet-button {
     min-height: 42px;
+  }
+
+  .print-sheet-preview-stage {
+    min-height: 170px;
+    padding: 10px;
   }
 }
