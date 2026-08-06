@@ -10,6 +10,8 @@ import {
 } from './print-sheet-pagination.js';
 import { FMTS, state } from './state.js';
 
+const PRINT_SHEET_MARGIN_OPTIONS_MM = Object.freeze([0, 2, 4, 5, 8, 10, 15, 20]);
+
 function appendText(doc, parent, tag, className, text) {
   const element = doc.createElement(tag);
   if (className) element.className = className;
@@ -98,7 +100,7 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
     panel,
     'p',
     'print-sheet-help',
-    'Xếp nhiều bản đúng kích thước lên giấy 10 × 15 cm hoặc A4. JPEG tải một tờ; PDF có thể tự chia nhiều trang.',
+    'Xếp nhiều bản đúng kích thước lên giấy 10 × 15 cm hoặc A4. Có thể chọn hướng giấy và lề; JPEG tải một tờ, PDF tự chia nhiều trang.',
   );
 
   const controls = doc.createElement('div');
@@ -119,6 +121,27 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
     label: 'Số bản / trang',
     options: [{ value: 'max', label: 'Tối đa' }],
   });
+
+  const orientationSelect = createSelectField(doc, controls, {
+    id: 'print-sheet-orientation',
+    label: 'Hướng giấy',
+    options: [
+      { value: 'auto', label: 'Tự động' },
+      { value: 'portrait', label: 'Dọc' },
+      { value: 'landscape', label: 'Ngang' },
+    ],
+  });
+  orientationSelect.value = 'auto';
+
+  const marginSelect = createSelectField(doc, controls, {
+    id: 'print-sheet-margin',
+    label: 'Lề giấy',
+    options: PRINT_SHEET_MARGIN_OPTIONS_MM.map((value) => ({
+      value: String(value),
+      label: `${value} mm`,
+    })),
+  });
+  marginSelect.value = String(PRINT_SHEET_PAPERS[paperSelect.value].defaultMarginMm);
 
   const gapSelect = createSelectField(doc, controls, {
     id: 'print-sheet-gap',
@@ -176,14 +199,23 @@ function orientationLabel(orientation) {
   return orientation === 'landscape' ? 'ngang' : 'dọc';
 }
 
+function orientationModeLabel(requestedOrientation, actualOrientation) {
+  const actual = orientationLabel(actualOrientation);
+  return requestedOrientation === 'auto' ? `tự động → ${actual}` : `ép ${actual}`;
+}
+
 function readSelectedOptions(doc) {
   const paperKey = doc.getElementById('print-sheet-paper')?.value ?? 'photo-10x15';
   const copiesValue = doc.getElementById('print-sheet-copies')?.value ?? 'max';
   const gapValue = doc.getElementById('print-sheet-gap')?.value;
+  const marginValue = doc.getElementById('print-sheet-margin')?.value;
+  const orientation = doc.getElementById('print-sheet-orientation')?.value ?? 'auto';
   return {
     paperKey,
     copies: copiesValue === 'max' ? 'max' : Number(copiesValue),
     gapMm: Number(gapValue ?? PRINT_SHEET_PAPERS[paperKey].defaultGapMm),
+    marginMm: Number(marginValue ?? PRINT_SHEET_PAPERS[paperKey].defaultMarginMm),
+    orientation,
     drawCropMarks: Boolean(doc.getElementById('print-sheet-crop-marks')?.checked),
   };
 }
@@ -225,7 +257,7 @@ function refreshPdfBatch(doc, selectedLayout) {
   const distribution = formatPrintSheetPageDistribution(batch.pageCopies);
   summary.textContent = batch.pageCount === 1
     ? `PDF: ${batch.totalCopies} ảnh · 1 trang giống bản xem trước.`
-    : `PDF: ${batch.totalCopies} ảnh · ${batch.pageCount} trang · ${distribution} ảnh/trang. Xem trước đang hiển thị trang đầy.`;
+    : `PDF: ${batch.totalCopies} ảnh · ${batch.pageCount} trang · ${distribution} ảnh/trang. Dùng điều hướng dưới bản xem trước để kiểm tra từng trang.`;
   summary.dataset.pageCount = String(batch.pageCount);
   summary.dataset.totalCopies = String(batch.totalCopies);
   summary.dataset.lastPageCopies = String(batch.lastPageCopies);
@@ -240,12 +272,25 @@ export function refreshPrintSheetPanel(doc = globalThis.document, {
   const paperSelect = doc.getElementById('print-sheet-paper');
   const copiesSelect = doc.getElementById('print-sheet-copies');
   const gapSelect = doc.getElementById('print-sheet-gap');
+  const marginSelect = doc.getElementById('print-sheet-margin');
+  const orientationSelect = doc.getElementById('print-sheet-orientation');
   const summary = doc.getElementById('print-sheet-summary');
   const format = FMTS[state.curFmt];
-  if (!paperSelect || !copiesSelect || !gapSelect || !summary || !format) return null;
+  if (
+    !paperSelect
+    || !copiesSelect
+    || !gapSelect
+    || !marginSelect
+    || !orientationSelect
+    || !summary
+    || !format
+  ) return null;
 
   const paper = PRINT_SHEET_PAPERS[paperSelect.value];
-  if (resetPaperDefaults) gapSelect.value = String(paper.defaultGapMm);
+  if (resetPaperDefaults) {
+    gapSelect.value = String(paper.defaultGapMm);
+    marginSelect.value = String(paper.defaultMarginMm);
+  }
   const previousCopies = copiesSelect.value || 'max';
   const capacityLayout = computePrintSheetLayout({
     paperKey: paper.key,
@@ -253,6 +298,8 @@ export function refreshPrintSheetPanel(doc = globalThis.document, {
     photoHeightMm: format.mmH,
     copies: 'max',
     gapMm: Number(gapSelect.value),
+    marginMm: Number(marginSelect.value),
+    orientation: orientationSelect.value,
   });
   populateCopyOptions(doc, capacityLayout.capacity, previousCopies);
 
@@ -263,12 +310,15 @@ export function refreshPrintSheetPanel(doc = globalThis.document, {
     photoHeightMm: format.mmH,
     copies: options.copies,
     gapMm: options.gapMm,
+    marginMm: options.marginMm,
+    orientation: options.orientation,
   });
   summary.textContent = [
     selectedLayout.paperLabel,
-    orientationLabel(selectedLayout.orientation),
+    orientationModeLabel(options.orientation, selectedLayout.orientation),
     `${selectedLayout.copies}/${selectedLayout.capacity} ảnh`,
     `${selectedLayout.columns} cột × ${selectedLayout.rowsUsed} hàng`,
+    `lề ${selectedLayout.marginMm} mm`,
     `${format.mmW} × ${format.mmH} mm mỗi ảnh`,
   ].join(' · ');
   const pdfBatch = refreshPdfBatch(doc, selectedLayout);
@@ -304,6 +354,8 @@ export function startPrintSheetView({
     refresh({ resetPaperDefaults: true });
   }, { signal });
   documentRef.getElementById('print-sheet-copies')?.addEventListener('change', () => refresh(), { signal });
+  documentRef.getElementById('print-sheet-orientation')?.addEventListener('change', () => refresh(), { signal });
+  documentRef.getElementById('print-sheet-margin')?.addEventListener('change', () => refresh(), { signal });
   documentRef.getElementById('print-sheet-gap')?.addEventListener('change', () => refresh(), { signal });
   const totalCopiesInput = documentRef.getElementById('print-sheet-pdf-total-copies');
   totalCopiesInput?.addEventListener('input', () => {
@@ -367,3 +419,5 @@ export function startPrintSheetView({
     activeUiObserver = null;
   };
 }
+
+export const PRINT_SHEET_MARGIN_OPTIONS = PRINT_SHEET_MARGIN_OPTIONS_MM;
