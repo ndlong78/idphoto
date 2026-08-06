@@ -35,6 +35,7 @@ async function runPrintSheetDelivery({
   delivery,
   options,
   layout,
+  pdfBatch = null,
   documentRef,
   downloadOptions,
 }) {
@@ -45,7 +46,9 @@ async function runPrintSheetDelivery({
     delivery,
     format: state.curFmt,
     paperKey: options.paperKey,
-    copies: layout.copies,
+    copiesPerPage: layout.copies,
+    totalCopies: delivery === 'pdf' ? pdfBatch?.totalCopies ?? layout.copies : layout.copies,
+    pageCount: delivery === 'pdf' ? pdfBatch?.pageCount ?? 1 : 1,
     capacity: layout.capacity,
     confirmed,
     confirmationRequired: readiness.requiresConfirmation,
@@ -60,9 +63,14 @@ async function runPrintSheetDelivery({
 
   try {
     const download = delivery === 'pdf' ? downloadPrintSheetPdf : downloadPrintSheet;
-    const result = await download(options, downloadOptions);
+    const deliveryOptions = delivery === 'pdf'
+      ? { ...options, totalCopies: pdfBatch?.totalCopies ?? layout.copies }
+      : options;
+    const result = await download(deliveryOptions, downloadOptions);
     setSteps(4);
-    const deliveryLabel = delivery === 'pdf' ? 'PDF đúng khổ' : 'tờ in JPEG';
+    const deliveryLabel = delivery === 'pdf'
+      ? (result.pageCount > 1 ? `PDF ${result.pageCount} trang` : 'PDF đúng khổ')
+      : 'tờ in JPEG';
     toast(
       auditEnabled
         ? `✅ Đã tải ${deliveryLabel}. Audit JSON chỉ áp dụng khi tải ảnh đơn.`
@@ -75,6 +83,11 @@ async function runPrintSheetDelivery({
       paperKey: result.paperKey,
       orientation: result.orientation,
       copies: result.copies,
+      copiesPerPage: result.copiesPerPage ?? result.copies,
+      totalCopies: result.totalCopies ?? result.copies,
+      pageCount: result.pageCount ?? 1,
+      lastPageCopies: result.lastPageCopies ?? result.copies,
+      uniqueSheetCount: result.uniqueSheetCount ?? 1,
       capacity: result.capacity,
       columns: result.columns,
       rows: result.rowsUsed,
@@ -89,7 +102,7 @@ async function runPrintSheetDelivery({
   } catch (error) {
     toast(
       delivery === 'pdf'
-        ? 'Chưa tạo được PDF. Vui lòng thử lại hoặc tải JPEG.'
+        ? 'Chưa tạo được PDF. Hãy giảm tổng số ảnh hoặc thử lại.'
         : 'Chưa tạo được tờ in. Vui lòng giảm số bản hoặc thử lại.',
       'err',
     );
@@ -97,9 +110,10 @@ async function runPrintSheetDelivery({
       delivery,
       format: state.curFmt,
       paperKey: options.paperKey,
+      totalCopies: delivery === 'pdf' ? pdfBatch?.totalCopies ?? null : null,
       error: serializeErrorForTelemetry(error, {
         fallbackMessage: delivery === 'pdf'
-          ? 'Print sheet PDF export failed'
+          ? 'Print sheet PDF batch export failed'
           : 'Print sheet export failed',
       }),
     }, 'error');
@@ -131,10 +145,11 @@ function start() {
         documentRef,
         downloadOptions,
       }),
-      onExportPdf: (options, layout) => runPrintSheetDelivery({
+      onExportPdf: (options, layout, pdfBatch) => runPrintSheetDelivery({
         delivery: 'pdf',
         options,
         layout,
+        pdfBatch,
         documentRef,
         downloadOptions,
       }),

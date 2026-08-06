@@ -112,19 +112,30 @@ function readJpegDimensions(bytes) {
   return null;
 }
 
-function extractEmbeddedJpeg(pdfBytes) {
-  let start = -1;
-  let end = -1;
-  for (let index = 0; index < pdfBytes.length - 1; index += 1) {
-    if (start < 0 && pdfBytes[index] === 0xff && pdfBytes[index + 1] === 0xd8) {
-      start = index;
+function extractEmbeddedJpegs(pdfBytes) {
+  const images = [];
+  let offset = 0;
+  while (offset < pdfBytes.length - 1) {
+    let start = -1;
+    for (let index = offset; index < pdfBytes.length - 1; index += 1) {
+      if (pdfBytes[index] === 0xff && pdfBytes[index + 1] === 0xd8) {
+        start = index;
+        break;
+      }
     }
-    if (start >= 0 && pdfBytes[index] === 0xff && pdfBytes[index + 1] === 0xd9) {
-      end = index + 2;
+    if (start < 0) break;
+    let end = -1;
+    for (let index = start + 2; index < pdfBytes.length - 1; index += 1) {
+      if (pdfBytes[index] === 0xff && pdfBytes[index + 1] === 0xd9) {
+        end = index + 2;
+        break;
+      }
     }
+    if (end <= start) break;
+    images.push(pdfBytes.slice(start, end));
+    offset = end;
   }
-  if (start < 0 || end <= start) return null;
-  return pdfBytes.slice(start, end);
+  return images;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -181,25 +192,58 @@ test('xuất A4 ngang ba ảnh hộ chiếu và tắt dấu cắt', async ({ pag
 test('xuất PDF 10x15 đúng MediaBox và nhúng JPEG 300 DPI', async ({ page }) => {
   await page.locator('button[data-fmt="schengen"]').click();
   await expect(page.locator('#print-sheet-summary')).toContainText('6/6 ảnh');
+  await expect(page.locator('#print-sheet-pdf-summary')).toContainText('6 ảnh · 1 trang');
 
   const download = await confirmPrintSheetDownload(page, '#btn-print-sheet-pdf');
   const filename = 'photovisa_sheet_photo-10x15_schengen_6copies_1181x1772_300dpi.pdf';
   expect(download.suggestedFilename()).toBe(filename);
   const bytes = await readDownloadBytes(download);
   const text = new TextDecoder('latin1').decode(bytes);
-  const jpeg = extractEmbeddedJpeg(bytes);
+  const [jpeg] = extractEmbeddedJpegs(bytes);
 
   expect(text.startsWith('%PDF-1.4')).toBe(true);
   expect(text).toContain('/MediaBox [0 0 283.4646 425.1969]');
   expect(text).toContain('/Width 1181 /Height 1772');
   expect(text).toContain('/Filter /DCTDecode');
-  expect(jpeg).not.toBeNull();
+  expect(jpeg).toBeDefined();
   expect(readJpegDimensions(jpeg)).toEqual({ width: 1181, height: 1772 });
   expect(readJpegDpi(jpeg)).toMatchObject({ unit: 'dpi', x: 300, y: 300 });
 
   await expect(page.locator('#export-receipt-badge')).toHaveText('PDF in');
   await expect(page.locator('#export-receipt-filename')).toHaveText(filename);
+  await expect(page.locator('#export-receipt-meta')).toContainText('1 trang');
   await expect(page.locator('#export-receipt-note')).toContainText('PDF đúng khổ');
   await expect(page.locator('#export-receipt-note')).toContainText('Actual size / 100%');
+  await expect(page.locator('#s4')).toHaveClass(/active/);
+});
+
+test('xuất PDF 14 ảnh thành ba trang và tái sử dụng trang đầy', async ({ page }) => {
+  await page.locator('button[data-fmt="schengen"]').click();
+  await expect(page.locator('#print-sheet-summary')).toContainText('6/6 ảnh');
+  await page.locator('#print-sheet-pdf-total-copies').fill('14');
+  await expect(page.locator('#print-sheet-pdf-summary')).toContainText('14 ảnh · 3 trang');
+  await expect(page.locator('#print-sheet-pdf-summary')).toContainText('6 + 6 + 2 ảnh/trang');
+
+  const download = await confirmPrintSheetDownload(page, '#btn-print-sheet-pdf');
+  const filename = 'photovisa_sheet_photo-10x15_schengen_14copies_3pages_1181x1772_300dpi.pdf';
+  expect(download.suggestedFilename()).toBe(filename);
+  const bytes = await readDownloadBytes(download);
+  const text = new TextDecoder('latin1').decode(bytes);
+  const jpegs = extractEmbeddedJpegs(bytes);
+
+  expect(text).toContain('/Kids [3 0 R 4 0 R 5 0 R] /Count 3');
+  expect((text.match(/\/MediaBox \[0 0 283\.4646 425\.1969\]/g) ?? [])).toHaveLength(3);
+  expect((text.match(/\/Subtype \/Image/g) ?? [])).toHaveLength(2);
+  expect(jpegs).toHaveLength(2);
+  for (const jpeg of jpegs) {
+    expect(readJpegDimensions(jpeg)).toEqual({ width: 1181, height: 1772 });
+    expect(readJpegDpi(jpeg)).toMatchObject({ unit: 'dpi', x: 300, y: 300 });
+  }
+
+  await expect(page.locator('#export-receipt-badge')).toHaveText('PDF in');
+  await expect(page.locator('#export-receipt-filename')).toHaveText(filename);
+  await expect(page.locator('#export-receipt-meta')).toContainText('14 ảnh');
+  await expect(page.locator('#export-receipt-meta')).toContainText('3 trang');
+  await expect(page.locator('#export-receipt-note')).toContainText('6 + 6 + 2');
   await expect(page.locator('#s4')).toHaveClass(/active/);
 });

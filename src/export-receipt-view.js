@@ -61,6 +61,8 @@ export function buildExportReceiptViewModel(receipt, {
   const meta = [formatByteSize(receipt.sizeBytes), time];
   if (receipt.widthPx && receipt.heightPx) meta.unshift(`${receipt.widthPx} × ${receipt.heightPx} px`);
   if (receipt.dpi) meta.unshift(`${receipt.dpi} DPI`);
+  if (receipt.pageCount) meta.unshift(`${receipt.pageCount} trang`);
+  if (receipt.copies) meta.unshift(`${receipt.copies} ảnh`);
 
   return {
     tone: receipt.status === 'fallback' ? 'fallback' : 'success',
