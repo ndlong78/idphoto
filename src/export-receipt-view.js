@@ -3,6 +3,7 @@ import { exportReceiptStore, formatByteSize } from './export-receipt.js';
 const DELIVERY_LABELS = Object.freeze({
   image: 'Ảnh đơn',
   'print-sheet': 'Tờ in',
+  'print-sheet-pdf': 'PDF in',
   'bundle-zip': 'Gói ZIP',
   'audit-json': 'Audit JSON',
   'image-fallback': 'Ảnh fallback',

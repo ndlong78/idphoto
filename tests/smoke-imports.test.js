@@ -11,6 +11,8 @@ const MODULES = [
   '../src/render.js',
   '../src/crop.js',
   '../src/ui.js',
+  '../src/pdf-jpeg.js',
+  '../src/print-sheet-pdf.js',
   '../src/ai.js',
   '../src/main.js',
 ];
