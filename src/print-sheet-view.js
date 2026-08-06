@@ -2,6 +2,12 @@ import {
   computePrintSheetLayout,
   PRINT_SHEET_PAPERS,
 } from './print-sheet-layout.js';
+import {
+  formatPrintSheetPageDistribution,
+  normalizePrintSheetPdfTotalCopies,
+  paginatePrintSheetCopies,
+  PRINT_SHEET_PDF_MAX_TOTAL_COPIES,
+} from './print-sheet-pagination.js';
 import { FMTS, state } from './state.js';
 
 function appendText(doc, parent, tag, className, text) {
@@ -47,6 +53,29 @@ function createSelectField(doc, parent, { id, label, options }) {
   return select;
 }
 
+function createNumberField(doc, parent, {
+  id,
+  label,
+  min,
+  max,
+}) {
+  const field = doc.createElement('label');
+  field.className = 'print-sheet-field';
+  field.htmlFor = id;
+  appendText(doc, field, 'span', '', label);
+  const input = doc.createElement('input');
+  input.id = id;
+  input.type = 'number';
+  input.min = String(min);
+  input.max = String(max);
+  input.step = '1';
+  input.inputMode = 'numeric';
+  input.autocomplete = 'off';
+  field.appendChild(input);
+  parent.appendChild(field);
+  return input;
+}
+
 export function ensurePrintSheetPanel(doc = globalThis.document) {
   if (!doc) return null;
   ensureStylesheet(doc);
@@ -69,7 +98,7 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
     panel,
     'p',
     'print-sheet-help',
-    'Xếp nhiều bản đúng kích thước lên giấy 10 × 15 cm hoặc A4. Tải JPEG 300 DPI hoặc PDF đúng khổ giấy.',
+    'Xếp nhiều bản đúng kích thước lên giấy 10 × 15 cm hoặc A4. JPEG tải một tờ; PDF có thể tự chia nhiều trang.',
   );
 
   const controls = doc.createElement('div');
@@ -87,7 +116,7 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
 
   createSelectField(doc, controls, {
     id: 'print-sheet-copies',
-    label: 'Số bản',
+    label: 'Số bản / trang',
     options: [{ value: 'max', label: 'Tối đa' }],
   });
 
@@ -112,6 +141,20 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
   summary.id = 'print-sheet-summary';
   summary.setAttribute('aria-live', 'polite');
 
+  const pdfBatch = doc.createElement('div');
+  pdfBatch.className = 'print-sheet-pdf-batch';
+  panel.appendChild(pdfBatch);
+  const totalCopies = createNumberField(doc, pdfBatch, {
+    id: 'print-sheet-pdf-total-copies',
+    label: 'Tổng ảnh PDF',
+    min: 1,
+    max: PRINT_SHEET_PDF_MAX_TOTAL_COPIES,
+  });
+  totalCopies.setAttribute('aria-describedby', 'print-sheet-pdf-summary');
+  const pdfSummary = appendText(doc, pdfBatch, 'p', 'print-sheet-pdf-summary', '');
+  pdfSummary.id = 'print-sheet-pdf-summary';
+  pdfSummary.setAttribute('aria-live', 'polite');
+
   const actions = doc.createElement('div');
   actions.className = 'print-sheet-actions';
   panel.appendChild(actions);
@@ -123,7 +166,7 @@ export function ensurePrintSheetPanel(doc = globalThis.document) {
   const pdfButton = appendText(doc, actions, 'button', 'print-sheet-button is-secondary', 'Tải PDF đúng khổ');
   pdfButton.type = 'button';
   pdfButton.id = 'btn-print-sheet-pdf';
-  pdfButton.title = 'Khi in PDF, chọn Actual size hoặc 100% để giữ đúng kích thước.';
+  pdfButton.title = 'PDF tự chia nhiều trang. Khi in, chọn Actual size hoặc 100%.';
 
   actionGroup.insertAdjacentElement('afterend', panel);
   return panel;
@@ -167,6 +210,28 @@ function populateCopyOptions(doc, capacity, preferredValue = 'max') {
   select.value = normalizedPreferred;
 }
 
+function refreshPdfBatch(doc, selectedLayout) {
+  const input = doc.getElementById('print-sheet-pdf-total-copies');
+  const summary = doc.getElementById('print-sheet-pdf-summary');
+  if (!input || !summary) return null;
+  const totalCopies = input.dataset.manual === 'true'
+    ? normalizePrintSheetPdfTotalCopies(input.value, { fallback: selectedLayout.copies })
+    : selectedLayout.copies;
+  input.value = String(totalCopies);
+  const batch = paginatePrintSheetCopies({
+    totalCopies,
+    copiesPerPage: selectedLayout.copies,
+  });
+  const distribution = formatPrintSheetPageDistribution(batch.pageCopies);
+  summary.textContent = batch.pageCount === 1
+    ? `PDF: ${batch.totalCopies} ảnh · 1 trang giống bản xem trước.`
+    : `PDF: ${batch.totalCopies} ảnh · ${batch.pageCount} trang · ${distribution} ảnh/trang. Xem trước đang hiển thị trang đầy.`;
+  summary.dataset.pageCount = String(batch.pageCount);
+  summary.dataset.totalCopies = String(batch.totalCopies);
+  summary.dataset.lastPageCopies = String(batch.lastPageCopies);
+  return batch;
+}
+
 export function refreshPrintSheetPanel(doc = globalThis.document, {
   resetPaperDefaults = false,
 } = {}) {
@@ -206,7 +271,8 @@ export function refreshPrintSheetPanel(doc = globalThis.document, {
     `${selectedLayout.columns} cột × ${selectedLayout.rowsUsed} hàng`,
     `${format.mmW} × ${format.mmH} mm mỗi ảnh`,
   ].join(' · ');
-  return { options, layout: selectedLayout };
+  const pdfBatch = refreshPdfBatch(doc, selectedLayout);
+  return { options, layout: selectedLayout, pdfBatch };
 }
 
 function setExportBusy(panel, buttons, busy) {
@@ -239,6 +305,15 @@ export function startPrintSheetView({
   }, { signal });
   documentRef.getElementById('print-sheet-copies')?.addEventListener('change', () => refresh(), { signal });
   documentRef.getElementById('print-sheet-gap')?.addEventListener('change', () => refresh(), { signal });
+  const totalCopiesInput = documentRef.getElementById('print-sheet-pdf-total-copies');
+  totalCopiesInput?.addEventListener('input', () => {
+    totalCopiesInput.dataset.manual = 'true';
+    if (totalCopiesInput.value) refresh();
+  }, { signal });
+  totalCopiesInput?.addEventListener('change', () => {
+    totalCopiesInput.dataset.manual = 'true';
+    refresh();
+  }, { signal });
 
   documentRef.addEventListener('click', (event) => {
     if (!event.target?.closest?.('.fbtn')) return;
@@ -277,7 +352,7 @@ export function startPrintSheetView({
       if (!current) return;
       setExportBusy(panel, buttons, true);
       try {
-        await callback(current.options, current.layout);
+        await callback(current.options, current.layout, current.pdfBatch);
       } finally {
         setExportBusy(panel, buttons, false);
       }
