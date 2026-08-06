@@ -1,3 +1,4 @@
+import { createPrintSheetPreviewPage } from './print-sheet-preview-navigation.js';
 import { renderPrintSheetPreview } from './print-sheet-preview.js';
 import { refreshPrintSheetPanel } from './print-sheet-view.js';
 import { state } from './state.js';
@@ -8,6 +9,14 @@ function appendText(doc, parent, tag, className, text) {
   element.textContent = text;
   parent.appendChild(element);
   return element;
+}
+
+function createNavigationButton(doc, parent, { id, label, direction }) {
+  const button = appendText(doc, parent, 'button', 'print-sheet-preview-nav-button', label);
+  button.id = id;
+  button.type = 'button';
+  button.dataset.previewDirection = direction;
+  return button;
 }
 
 export function ensurePrintSheetPreview(doc = globalThis.document) {
@@ -31,10 +40,38 @@ export function ensurePrintSheetPreview(doc = globalThis.document) {
   canvas.id = 'print-sheet-preview-canvas';
   canvas.className = 'print-sheet-preview-canvas';
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-describedby', 'print-sheet-summary print-sheet-preview-caption');
+  canvas.setAttribute(
+    'aria-describedby',
+    'print-sheet-summary print-sheet-pdf-summary print-sheet-preview-page-indicator print-sheet-preview-caption',
+  );
   canvas.setAttribute('aria-label', 'Bản xem trước tờ in nhiều ảnh');
   stage.appendChild(canvas);
   figure.appendChild(stage);
+
+  const navigation = doc.createElement('nav');
+  navigation.id = 'print-sheet-preview-navigation';
+  navigation.className = 'print-sheet-preview-navigation';
+  navigation.setAttribute('aria-label', 'Điều hướng các trang PDF');
+  createNavigationButton(doc, navigation, {
+    id: 'btn-print-sheet-preview-previous',
+    label: '← Trang trước',
+    direction: 'previous',
+  });
+  const indicator = appendText(
+    doc,
+    navigation,
+    'span',
+    'print-sheet-preview-page-indicator',
+    'Trang 1/1 · 1 ảnh',
+  );
+  indicator.id = 'print-sheet-preview-page-indicator';
+  indicator.setAttribute('aria-live', 'polite');
+  createNavigationButton(doc, navigation, {
+    id: 'btn-print-sheet-preview-next',
+    label: 'Trang sau →',
+    direction: 'next',
+  });
+  figure.appendChild(navigation);
 
   const status = appendText(
     doc,
@@ -51,7 +88,7 @@ export function ensurePrintSheetPreview(doc = globalThis.document) {
     figure,
     'figcaption',
     'print-sheet-preview-caption',
-    'Bản xem trước nhẹ theo đúng bố cục. File tải xuống vẫn được tạo riêng ở 300 DPI.',
+    'Bản xem trước nhẹ theo đúng bố cục từng trang. File tải xuống vẫn được tạo riêng ở 300 DPI.',
   );
   caption.id = 'print-sheet-preview-caption';
 
@@ -61,6 +98,22 @@ export function ensurePrintSheetPreview(doc = globalThis.document) {
 
 function closestMatches(target, selector) {
   return Boolean(target?.closest?.(selector));
+}
+
+function updateNavigation(doc, page) {
+  const navigation = doc.getElementById('print-sheet-preview-navigation');
+  const previousButton = doc.getElementById('btn-print-sheet-preview-previous');
+  const nextButton = doc.getElementById('btn-print-sheet-preview-next');
+  const indicator = doc.getElementById('print-sheet-preview-page-indicator');
+  if (navigation) {
+    navigation.hidden = page.pageCount <= 1;
+    navigation.dataset.currentPage = String(page.pageNumber);
+    navigation.dataset.pageCount = String(page.pageCount);
+    navigation.dataset.pageCopies = String(page.copies);
+  }
+  if (previousButton) previousButton.disabled = page.isFirstPage;
+  if (nextButton) nextButton.disabled = page.isLastPage;
+  if (indicator) indicator.textContent = page.label;
 }
 
 let activeController = null;
@@ -87,25 +140,38 @@ export function startPrintSheetPreviewView({
   const canvas = documentRef.getElementById('print-sheet-preview-canvas');
   const stage = documentRef.getElementById('print-sheet-preview-stage');
   const status = documentRef.getElementById('print-sheet-preview-status');
+  let currentPageNumber = 1;
 
   const renderCurrentPreview = () => {
     const current = refreshPrintSheetPanel(documentRef);
     if (!current || !canvas) return null;
+    const page = createPrintSheetPreviewPage({
+      layout: current.layout,
+      pdfBatch: current.pdfBatch,
+      pageNumber: currentPageNumber,
+    });
+    currentPageNumber = page.pageNumber;
+    updateNavigation(documentRef, page);
+
     const sourceCanvas = documentRef.getElementById('result-canvas');
     const availableWidth = Number(stage?.clientWidth) > 40
       ? Math.max(140, Math.min(320, Number(stage.clientWidth) - 24))
       : 300;
-    const result = renderPrintSheetPreview(sourceCanvas, current.layout, {
+    const result = renderPrintSheetPreview(sourceCanvas, page.layout, {
       canvas,
       drawCropMarks: current.options.drawCropMarks,
       maxWidthCss: availableWidth,
       maxHeightCss: 320,
       devicePixelRatio: windowRef?.devicePixelRatio ?? 1,
     });
-    if (canvas.dataset) canvas.dataset.previewFormat = String(state.curFmt ?? '');
+    if (canvas.dataset) {
+      canvas.dataset.previewFormat = String(state.curFmt ?? '');
+      canvas.dataset.previewPage = String(page.pageNumber);
+      canvas.dataset.previewPageCount = String(page.pageCount);
+    }
     canvas.setAttribute(
       'aria-label',
-      `${current.layout.paperLabel}, ${current.layout.copies} ảnh, ${current.layout.columns} cột × ${current.layout.rowsUsed} hàng`,
+      `${page.label}, ${page.layout.paperLabel}, ${page.layout.columns} cột × ${page.layout.rowsUsed} hàng`,
     );
     if (status) {
       status.hidden = result.sourceReady;
@@ -113,7 +179,7 @@ export function startPrintSheetPreviewView({
         ? ''
         : 'Đang chờ ảnh kết quả để tạo bản xem trước.';
     }
-    return result;
+    return Object.freeze({ ...result, page });
   };
 
   const clearScheduledPreview = () => {
@@ -156,23 +222,43 @@ export function startPrintSheetPreviewView({
     '#print-sheet-copies',
     '#print-sheet-gap',
     '#print-sheet-crop-marks',
+    '#print-sheet-pdf-total-copies',
+  ].join(',');
+  const layoutResetSelector = [
+    '#print-sheet-paper',
+    '#print-sheet-copies',
+    '#print-sheet-gap',
   ].join(',');
 
   documentRef.addEventListener('change', (event) => {
-    if (closestMatches(event.target, printControlSelector)) schedulePreview([0, 120]);
+    if (!closestMatches(event.target, printControlSelector)) return;
+    if (closestMatches(event.target, layoutResetSelector)) currentPageNumber = 1;
+    schedulePreview([0, 120]);
   }, { signal });
 
   documentRef.addEventListener('input', (event) => {
+    if (closestMatches(event.target, '#print-sheet-pdf-total-copies')) {
+      schedulePreview([80, 180]);
+      return;
+    }
     if (!closestMatches(event.target, '#editor-section')) return;
     if (closestMatches(event.target, printControlSelector)) return;
     schedulePreview([80, 240]);
   }, { signal });
 
   documentRef.addEventListener('click', (event) => {
+    const navigationButton = event.target?.closest?.('button[data-preview-direction]');
+    if (navigationButton) {
+      const direction = navigationButton.dataset.previewDirection;
+      currentPageNumber += direction === 'previous' ? -1 : 1;
+      schedulePreview([0]);
+      return;
+    }
     if (!closestMatches(
       event.target,
       '.fbtn, .sw, #btn-reprocess, #btn-reset-face, #btn-fit, #btn-zoom-minus, #btn-zoom-plus, #btn-result-minus, #btn-result-plus, #btn-result-fit',
     )) return;
+    if (closestMatches(event.target, '.fbtn')) currentPageNumber = 1;
     schedulePreview();
   }, { signal });
 
