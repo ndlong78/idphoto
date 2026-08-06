@@ -6,6 +6,7 @@ import {
 } from './export-recovery.js';
 import { startExportReceiptView } from './export-receipt-view.js';
 import { manualReviewStore } from './manual-review.js';
+import { startPrintSheetPreviewView } from './print-sheet-preview-view.js';
 import { downloadPrintSheet } from './print-sheet.js';
 import { startPrintSheetView } from './print-sheet-view.js';
 import { state } from './state.js';
@@ -101,6 +102,10 @@ function start() {
           }, 'error');
         }
       },
+    });
+    startPrintSheetPreviewView({
+      documentRef,
+      windowRef: globalThis.window,
     });
   });
 }
