@@ -62,10 +62,11 @@ async function waitForEditor(page) {
   await expect(page.locator('#editor-section')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('#print-sheet-panel')).toBeVisible();
   await expect(page.locator('#btn-print-sheet')).toBeEnabled();
+  await expect(page.locator('#btn-print-sheet-pdf')).toBeEnabled();
 }
 
-async function confirmPrintSheetDownload(page) {
-  await page.locator('#btn-print-sheet').click();
+async function confirmPrintSheetDownload(page, buttonSelector = '#btn-print-sheet') {
+  await page.locator(buttonSelector).click();
   const dialog = page.locator('#export-readiness-dialog');
   await expect(dialog).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
@@ -109,6 +110,21 @@ function readJpegDimensions(bytes) {
     offset += segmentLength;
   }
   return null;
+}
+
+function extractEmbeddedJpeg(pdfBytes) {
+  let start = -1;
+  let end = -1;
+  for (let index = 0; index < pdfBytes.length - 1; index += 1) {
+    if (start < 0 && pdfBytes[index] === 0xff && pdfBytes[index + 1] === 0xd8) {
+      start = index;
+    }
+    if (start >= 0 && pdfBytes[index] === 0xff && pdfBytes[index + 1] === 0xd9) {
+      end = index + 2;
+    }
+  }
+  if (start < 0 || end <= start) return null;
+  return pdfBytes.slice(start, end);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -160,4 +176,30 @@ test('xuất A4 ngang ba ảnh hộ chiếu và tắt dấu cắt', async ({ pag
   await expect(page.locator('#export-receipt-note')).toContainText('A4');
   await expect(page.locator('#export-receipt-note')).toContainText('3 ảnh');
   await expect(page.locator('#export-receipt-note')).not.toContainText('có dấu cắt');
+});
+
+test('xuất PDF 10x15 đúng MediaBox và nhúng JPEG 300 DPI', async ({ page }) => {
+  await page.locator('button[data-fmt="schengen"]').click();
+  await expect(page.locator('#print-sheet-summary')).toContainText('6/6 ảnh');
+
+  const download = await confirmPrintSheetDownload(page, '#btn-print-sheet-pdf');
+  const filename = 'photovisa_sheet_photo-10x15_schengen_6copies_1181x1772_300dpi.pdf';
+  expect(download.suggestedFilename()).toBe(filename);
+  const bytes = await readDownloadBytes(download);
+  const text = new TextDecoder('latin1').decode(bytes);
+  const jpeg = extractEmbeddedJpeg(bytes);
+
+  expect(text.startsWith('%PDF-1.4')).toBe(true);
+  expect(text).toContain('/MediaBox [0 0 283.4646 425.1969]');
+  expect(text).toContain('/Width 1181 /Height 1772');
+  expect(text).toContain('/Filter /DCTDecode');
+  expect(jpeg).not.toBeNull();
+  expect(readJpegDimensions(jpeg)).toEqual({ width: 1181, height: 1772 });
+  expect(readJpegDpi(jpeg)).toMatchObject({ unit: 'dpi', x: 300, y: 300 });
+
+  await expect(page.locator('#export-receipt-badge')).toHaveText('PDF in');
+  await expect(page.locator('#export-receipt-filename')).toHaveText(filename);
+  await expect(page.locator('#export-receipt-note')).toContainText('PDF đúng khổ');
+  await expect(page.locator('#export-receipt-note')).toContainText('Actual size / 100%');
+  await expect(page.locator('#s4')).toHaveClass(/active/);
 });
