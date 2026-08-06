@@ -47,7 +47,8 @@ test('batch 6 + 6 + 2 trả đúng layout trang cuối và căn giữa hàng', (
   assert.equal(page.layout.rowsUsed, 1);
   assert.equal(page.layout.positions[0].row, 0);
   assert.equal(page.layout.positions[1].row, 0);
-  assert.ok(page.layout.positions[0].xMm > layout.positions[0].xMm);
+  assert.equal(page.layout.positions[0].xMm, layout.positions[0].xMm);
+  assert.ok(page.layout.positions[0].yMm > layout.positions[0].yMm);
   assert.equal(page.isFirstPage, false);
   assert.equal(page.isLastPage, true);
   assert.equal(page.previousPage, 2);
