@@ -225,7 +225,7 @@ function refreshPdfBatch(doc, selectedLayout) {
   const distribution = formatPrintSheetPageDistribution(batch.pageCopies);
   summary.textContent = batch.pageCount === 1
     ? `PDF: ${batch.totalCopies} ảnh · 1 trang giống bản xem trước.`
-    : `PDF: ${batch.totalCopies} ảnh · ${batch.pageCount} trang · ${distribution} ảnh/trang. Xem trước đang hiển thị trang đầy.`;
+    : `PDF: ${batch.totalCopies} ảnh · ${batch.pageCount} trang · ${distribution} ảnh/trang. Dùng điều hướng dưới bản xem trước để kiểm tra từng trang.`;
   summary.dataset.pageCount = String(batch.pageCount);
   summary.dataset.totalCopies = String(batch.totalCopies);
   summary.dataset.lastPageCopies = String(batch.lastPageCopies);
