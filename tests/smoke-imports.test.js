@@ -13,6 +13,7 @@ const MODULES = [
   '../src/ui.js',
   '../src/pdf-jpeg.js',
   '../src/print-sheet-pagination.js',
+  '../src/print-sheet-preview-navigation.js',
   '../src/print-sheet-pdf.js',
   '../src/ai.js',
   '../src/main.js',

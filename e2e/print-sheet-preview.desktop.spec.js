@@ -75,6 +75,9 @@ test('live preview theo preset, số bản, khổ giấy và dấu cắt mà kh�
   await expect(canvas).toHaveAttribute('data-preview-columns', '2');
   await expect(canvas).toHaveAttribute('data-preview-rows', '2');
   await expect(canvas).toHaveAttribute('data-preview-crop-marks', 'true');
+  await expect(canvas).toHaveAttribute('data-preview-page', '1');
+  await expect(canvas).toHaveAttribute('data-preview-page-count', '1');
+  await expect(page.locator('#print-sheet-preview-navigation')).toBeHidden();
 
   const firstRevision = Number(await canvas.getAttribute('data-preview-revision'));
   expect(firstRevision).toBeGreaterThan(0);
@@ -119,5 +122,53 @@ test('live preview theo preset, số bản, khổ giấy và dấu cắt mà kh�
   expect(canvasBox).not.toBeNull();
   expect(stageBox).not.toBeNull();
   expect(canvasBox.width).toBeLessThanOrEqual(stageBox.width);
+  await expect(page.locator('#export-receipt')).toBeHidden();
+});
+
+test('preview batch duyệt tới trang cuối và clamp khi giảm tổng số ảnh', async ({ page }) => {
+  const canvas = page.locator('#print-sheet-preview-canvas');
+  const navigation = page.locator('#print-sheet-preview-navigation');
+  const indicator = page.locator('#print-sheet-preview-page-indicator');
+  const previousButton = page.locator('#btn-print-sheet-preview-previous');
+  const nextButton = page.locator('#btn-print-sheet-preview-next');
+
+  await page.locator('button[data-fmt="schengen"]').click();
+  await expect(page.locator('#print-sheet-summary')).toContainText('6/6 ảnh');
+  await page.locator('#print-sheet-pdf-total-copies').fill('14');
+  await expect(page.locator('#print-sheet-pdf-summary')).toContainText('3 trang');
+  await expect(navigation).toBeVisible();
+  await expect(indicator).toHaveText('Trang 1/3 · 6 ảnh');
+  await expect(previousButton).toBeDisabled();
+  await expect(nextButton).toBeEnabled();
+  await expect(canvas).toHaveAttribute('data-preview-page', '1');
+  await expect(canvas).toHaveAttribute('data-preview-page-count', '3');
+  await expect(canvas).toHaveAttribute('data-preview-copies', '6');
+
+  await nextButton.click();
+  await expect(indicator).toHaveText('Trang 2/3 · 6 ảnh');
+  await expect(canvas).toHaveAttribute('data-preview-page', '2');
+  await expect(canvas).toHaveAttribute('data-preview-copies', '6');
+
+  await nextButton.click();
+  await expect(indicator).toHaveText('Trang 3/3 · 2 ảnh');
+  await expect(canvas).toHaveAttribute('data-preview-page', '3');
+  await expect(canvas).toHaveAttribute('data-preview-copies', '2');
+  await expect(canvas).toHaveAttribute('data-preview-columns', '2');
+  await expect(canvas).toHaveAttribute('data-preview-rows', '1');
+  await expect(previousButton).toBeEnabled();
+  await expect(nextButton).toBeDisabled();
+  await expect(canvas).toHaveAttribute('aria-label', /Trang 3\/3 · 2 ảnh/);
+
+  await page.locator('#print-sheet-pdf-total-copies').fill('8');
+  await expect(indicator).toHaveText('Trang 2/2 · 2 ảnh');
+  await expect(canvas).toHaveAttribute('data-preview-page', '2');
+  await expect(canvas).toHaveAttribute('data-preview-page-count', '2');
+  await expect(nextButton).toBeDisabled();
+
+  await page.locator('#print-sheet-pdf-total-copies').fill('6');
+  await expect(navigation).toBeHidden();
+  await expect(canvas).toHaveAttribute('data-preview-page', '1');
+  await expect(canvas).toHaveAttribute('data-preview-page-count', '1');
+  await expect(canvas).toHaveAttribute('data-preview-copies', '6');
   await expect(page.locator('#export-receipt')).toBeHidden();
 });
