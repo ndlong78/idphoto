@@ -164,15 +164,37 @@ test('xuất tờ 10x15 gồm sáu ảnh Schengen đúng pixel và 300 DPI', asy
   await expect(page.locator('#export-receipt-filename')).toHaveText(filename);
   await expect(page.locator('#export-receipt-meta')).toContainText('300 DPI');
   await expect(page.locator('#export-receipt-note')).toContainText('6 ảnh');
+  await expect(page.locator('#export-receipt-note')).toContainText('lề 4 mm');
   await expect(page.locator('#export-receipt-note')).toContainText('có dấu cắt');
   await expect(page.locator('#s4')).toHaveClass(/active/);
+});
+
+test('xuất JPEG ngang với lề 20 mm dùng đúng canvas và receipt', async ({ page }) => {
+  await page.locator('button[data-fmt="schengen"]').click();
+  await page.locator('#print-sheet-orientation').selectOption('landscape');
+  await page.locator('#print-sheet-margin').selectOption('20');
+  await expect(page.locator('#print-sheet-summary')).toContainText('ép ngang');
+  await expect(page.locator('#print-sheet-summary')).toContainText('2/2 ảnh');
+  await expect(page.locator('#print-sheet-summary')).toContainText('lề 20 mm');
+
+  const download = await confirmPrintSheetDownload(page);
+  const filename = 'photovisa_sheet_photo-10x15_schengen_2copies_1772x1181_300dpi.jpeg';
+  expect(download.suggestedFilename()).toBe(filename);
+  const bytes = await readDownloadBytes(download);
+  expect(readJpegDimensions(bytes)).toEqual({ width: 1772, height: 1181 });
+  expect(readJpegDpi(bytes)).toMatchObject({ unit: 'dpi', x: 300, y: 300 });
+
+  await expect(page.locator('#export-receipt-badge')).toHaveText('Tờ in');
+  await expect(page.locator('#export-receipt-note')).toContainText('ngang');
+  await expect(page.locator('#export-receipt-note')).toContainText('lề 20 mm');
 });
 
 test('xuất A4 ngang ba ảnh hộ chiếu và tắt dấu cắt', async ({ page }) => {
   await page.locator('#print-sheet-paper').selectOption('a4');
   await page.locator('#print-sheet-copies').selectOption('3');
   await page.locator('#print-sheet-crop-marks').uncheck();
-  await expect(page.locator('#print-sheet-summary')).toContainText('A4 · ngang');
+  await expect(page.locator('#print-sheet-summary')).toContainText('A4');
+  await expect(page.locator('#print-sheet-summary')).toContainText('tự động → ngang');
   await expect(page.locator('#print-sheet-summary')).toContainText('3/18 ảnh');
   await expect(page.locator('#print-sheet-summary')).toContainText('6 cột × 1 hàng');
 
@@ -212,6 +234,7 @@ test('xuất PDF 10x15 đúng MediaBox và nhúng JPEG 300 DPI', async ({ page }
   await expect(page.locator('#export-receipt-badge')).toHaveText('PDF in');
   await expect(page.locator('#export-receipt-filename')).toHaveText(filename);
   await expect(page.locator('#export-receipt-meta')).toContainText('1 trang');
+  await expect(page.locator('#export-receipt-note')).toContainText('lề 4 mm');
   await expect(page.locator('#export-receipt-note')).toContainText('PDF đúng khổ');
   await expect(page.locator('#export-receipt-note')).toContainText('Actual size / 100%');
   await expect(page.locator('#s4')).toHaveClass(/active/);
