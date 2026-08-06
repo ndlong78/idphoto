@@ -188,7 +188,7 @@ export async function downloadPrintSheet(options = {}, harness = {}) {
     widthPx: result.width,
     heightPx: result.height,
     dpi: result.targetDpi,
-    note: `${result.paperLabel} · ${result.copies} ảnh · ${result.columns} cột × ${result.rowsUsed} hàng${result.drawCropMarks ? ' · có dấu cắt' : ''}.`,
+    note: `${result.paperLabel} · ${result.copies} ảnh · ${result.columns} cột × ${result.rowsUsed} hàng · ${result.orientation === 'landscape' ? 'ngang' : 'dọc'} · lề ${result.marginMm} mm${result.drawCropMarks ? ' · có dấu cắt' : ''}.`,
   });
   return {
     ...result,
