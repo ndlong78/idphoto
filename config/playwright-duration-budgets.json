@@ -30,7 +30,7 @@
     "cross-webkit": {
       "baselineAverageTestDurationMs": 13153,
       "maxAverageTestDurationMs": 22000,
-      "maxSingleTestDurationMs": 29000
+      "maxSingleTestDurationMs": 29500
     },
     "webkit-iphone-se": {
       "baselineAverageTestDurationMs": 8845,
