@@ -110,7 +110,7 @@ jobs:
 
   merge-browser-reports:
     name: Browser E2E / Unified report
-    if: ${{ !cancelled() }}
+    if: ${{ always() && !cancelled() && (needs.browser-e2e.result == 'success' || needs.browser-e2e.result == 'failure') }}
     needs: browser-e2e
     runs-on: ubuntu-latest
     timeout-minutes: 10
