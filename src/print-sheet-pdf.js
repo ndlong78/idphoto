@@ -167,7 +167,7 @@ export async function downloadPrintSheetPdf(options = {}, harness = {}) {
     dpi: result.targetDpi,
     copies: result.totalCopies,
     pageCount: result.pageCount,
-    note: `${result.paperLabel} · ${result.totalCopies} ảnh · ${result.pageCount} trang (${distribution}) · PDF đúng khổ. Khi in chọn Actual size / 100%.`,
+    note: `${result.paperLabel} · ${result.totalCopies} ảnh · ${result.pageCount} trang (${distribution}) · ${result.orientation === 'landscape' ? 'ngang' : 'dọc'} · lề ${result.marginMm} mm · PDF đúng khổ. Khi in chọn Actual size / 100%.`,
   });
   return Object.freeze({
     ...result,

@@ -220,6 +220,8 @@ export function startPrintSheetPreviewView({
   const printControlSelector = [
     '#print-sheet-paper',
     '#print-sheet-copies',
+    '#print-sheet-orientation',
+    '#print-sheet-margin',
     '#print-sheet-gap',
     '#print-sheet-crop-marks',
     '#print-sheet-pdf-total-copies',
@@ -227,6 +229,8 @@ export function startPrintSheetPreviewView({
   const layoutResetSelector = [
     '#print-sheet-paper',
     '#print-sheet-copies',
+    '#print-sheet-orientation',
+    '#print-sheet-margin',
     '#print-sheet-gap',
   ].join(',');
 

@@ -104,6 +104,8 @@ test('live preview theo preset, số bản, khổ giấy và dấu cắt mà kh�
 
   await page.locator('#print-sheet-paper').selectOption('a4');
   await page.locator('#print-sheet-copies').selectOption('max');
+  await expect(page.locator('#print-sheet-margin')).toHaveValue('10');
+  await expect(page.locator('#print-sheet-gap')).toHaveValue('4');
   await expect(canvas).toHaveAttribute('data-preview-paper', 'a4');
   await expect(canvas).toHaveAttribute('data-preview-orientation', 'landscape');
   await expect(canvas).toHaveAttribute('data-preview-copies', '21');
@@ -136,6 +138,7 @@ test('preview batch duyệt tới trang cuối và clamp khi giảm tổng số 
   await expect(page.locator('#print-sheet-summary')).toContainText('6/6 ảnh');
   await page.locator('#print-sheet-pdf-total-copies').fill('14');
   await expect(page.locator('#print-sheet-pdf-summary')).toContainText('3 trang');
+  await expect(page.locator('#print-sheet-pdf-summary')).toContainText('Dùng điều hướng');
   await expect(navigation).toBeVisible();
   await expect(indicator).toHaveText('Trang 1/3 · 6 ảnh');
   await expect(previousButton).toBeDisabled();
@@ -170,5 +173,54 @@ test('preview batch duyệt tới trang cuối và clamp khi giảm tổng số 
   await expect(canvas).toHaveAttribute('data-preview-page', '1');
   await expect(canvas).toHaveAttribute('data-preview-page-count', '1');
   await expect(canvas).toHaveAttribute('data-preview-copies', '6');
+  await expect(page.locator('#export-receipt')).toBeHidden();
+});
+
+test('hướng giấy và lề tùy chỉnh cập nhật sức chứa và preview batch', async ({ page }) => {
+  const canvas = page.locator('#print-sheet-preview-canvas');
+  const summary = page.locator('#print-sheet-summary');
+  const pdfSummary = page.locator('#print-sheet-pdf-summary');
+  const indicator = page.locator('#print-sheet-preview-page-indicator');
+  const nextButton = page.locator('#btn-print-sheet-preview-next');
+
+  await page.locator('button[data-fmt="schengen"]').click();
+  await expect(page.locator('#print-sheet-orientation')).toHaveValue('auto');
+  await expect(page.locator('#print-sheet-margin')).toHaveValue('4');
+  await expect(summary).toContainText('tự động → dọc');
+  await expect(summary).toContainText('6/6 ảnh');
+  await expect(summary).toContainText('lề 4 mm');
+
+  await page.locator('#print-sheet-orientation').selectOption('landscape');
+  await expect(summary).toContainText('ép ngang');
+  await expect(summary).toContainText('3/3 ảnh');
+  await expect(canvas).toHaveAttribute('data-preview-orientation', 'landscape');
+  await expect(canvas).toHaveAttribute('data-preview-copies', '3');
+  await expect(canvas).toHaveAttribute('data-preview-columns', '3');
+  await expect(canvas).toHaveAttribute('data-preview-rows', '1');
+
+  await page.locator('#print-sheet-pdf-total-copies').fill('5');
+  await expect(pdfSummary).toContainText('2 trang');
+  await expect(indicator).toHaveText('Trang 1/2 · 3 ảnh');
+
+  await page.locator('#print-sheet-margin').selectOption('20');
+  await expect(summary).toContainText('ép ngang');
+  await expect(summary).toContainText('2/2 ảnh');
+  await expect(summary).toContainText('lề 20 mm');
+  await expect(pdfSummary).toContainText('3 trang');
+  await expect(pdfSummary).toContainText('2 + 2 + 1 ảnh/trang');
+  await expect(indicator).toHaveText('Trang 1/3 · 2 ảnh');
+  await expect(canvas).toHaveAttribute('data-preview-page', '1');
+  await expect(canvas).toHaveAttribute('data-preview-page-count', '3');
+  await expect(canvas).toHaveAttribute('data-preview-copies', '2');
+  await expect(canvas).toHaveAttribute('data-preview-columns', '2');
+
+  await nextButton.click();
+  await nextButton.click();
+  await expect(indicator).toHaveText('Trang 3/3 · 1 ảnh');
+  await expect(canvas).toHaveAttribute('data-preview-page', '3');
+  await expect(canvas).toHaveAttribute('data-preview-copies', '1');
+  await expect(canvas).toHaveAttribute('data-preview-columns', '2');
+  await expect(canvas).toHaveAttribute('data-preview-rows', '1');
+
   await expect(page.locator('#export-receipt')).toBeHidden();
 });

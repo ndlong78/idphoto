@@ -54,6 +54,13 @@ test('pull-request and nightly workflows enforce reliability and duration guardr
   }
 });
 
+test('pull-request unified report does not run when browser matrix was skipped or cancelled', () => {
+  assert.match(
+    ciWorkflow,
+    /merge-browser-reports:[\s\S]*if: \$\{\{ always\(\) && !cancelled\(\) && \(needs\.browser-e2e\.result == 'success' \|\| needs\.browser-e2e\.result == 'failure'\) \}\}/,
+  );
+});
+
 test('duration budget config covers every Playwright project with safe headroom', () => {
   const expectedProjects = [
     'chromium-desktop',

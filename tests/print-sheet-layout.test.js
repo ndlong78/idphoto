@@ -23,6 +23,37 @@ test('10x15 xếp tối đa sáu ảnh 35x45 theo lưới 2x3', () => {
   assert.equal(layout.positions.length, 6);
 });
 
+test('ép ngang và tăng lề làm giảm sức chứa nhưng giữ đúng kích thước ảnh', () => {
+  const landscape = computePrintSheetLayout({
+    paperKey: 'photo-10x15',
+    photoWidthMm: 35,
+    photoHeightMm: 45,
+    orientation: 'landscape',
+    marginMm: 4,
+  });
+  const wideMargin = computePrintSheetLayout({
+    paperKey: 'photo-10x15',
+    photoWidthMm: 35,
+    photoHeightMm: 45,
+    orientation: 'landscape',
+    marginMm: 20,
+  });
+
+  assert.equal(landscape.orientation, 'landscape');
+  assert.equal(landscape.paperWidthMm, 150);
+  assert.equal(landscape.paperHeightMm, 100);
+  assert.equal(landscape.capacity, 3);
+  assert.equal(landscape.columns, 3);
+  assert.equal(landscape.rows, 1);
+  assert.equal(wideMargin.orientation, 'landscape');
+  assert.equal(wideMargin.marginMm, 20);
+  assert.equal(wideMargin.capacity, 2);
+  assert.equal(wideMargin.columns, 2);
+  assert.equal(wideMargin.rows, 1);
+  assert.equal(wideMargin.photoWidthMm, 35);
+  assert.equal(wideMargin.photoHeightMm, 45);
+});
+
 test('10x15 xếp bốn ảnh hộ chiếu Việt Nam 40x60', () => {
   const layout = computePrintSheetLayout({
     paperKey: 'photo-10x15',
